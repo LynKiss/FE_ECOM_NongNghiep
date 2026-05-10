@@ -1,21 +1,29 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
+  Award,
   BadgePercent,
   CalendarClock,
+  ChevronDown,
   Edit2,
   LoaderCircle,
   Plus,
+  RefreshCw,
   Save,
+  Search,
+  Settings,
   Tags,
   Trash2,
   ToggleLeft,
   ToggleRight,
   BarChart2,
+  Users2,
 } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import { apiClient } from '../lib/api';
 import { useLanguage } from '../i18n/language-context';
 import { useToast } from '../hooks/useToast';
 import Modal from '../components/shared/Modal';
+import Pagination from '../components/shared/Pagination';
 
 type Discount = {
   discountId: string;
@@ -42,6 +50,50 @@ type Discount = {
 
 type Category = { categoryId: string; categoryName: string };
 type Product = { productId: string; productName: string };
+
+type TierConfigItem = {
+  tier: 'silver' | 'gold' | 'diamond';
+  label: string;
+  minSpent: number;
+  discountPercent: number;
+  couponValidDays: number;
+};
+
+type MemberRow = {
+  userId: string; username: string; email: string;
+  fullName: string | null; avatarUrl: string | null;
+  tier: string; label: string; totalSpent: number; discountPercent: number;
+};
+type OverviewResponse = {
+  data: MemberRow[];
+  meta: { page: number; limit: number; total: number; totalPages: number };
+  tierStats: Record<string, number>;
+};
+const TIERS = [
+  { value: 'all', label: 'Tất cả', dot: 'bg-gray-300' },
+  { value: 'none', label: 'Thường', dot: 'bg-gray-400' },
+  { value: 'silver', label: 'Bạc', dot: 'bg-slate-400' },
+  { value: 'gold', label: 'Vàng', dot: 'bg-amber-400' },
+  { value: 'diamond', label: 'Kim Cương', dot: 'bg-cyan-400' },
+];
+const TIER_BADGE: Record<string, string> = {
+  none: 'bg-gray-100 text-gray-500 border-gray-200',
+  silver: 'bg-slate-100 text-slate-600 border-slate-300',
+  gold: 'bg-amber-50 text-amber-700 border-amber-300',
+  diamond: 'bg-cyan-50 text-cyan-700 border-cyan-300',
+};
+const STAT_CARD: Record<string, { bg: string; text: string; border: string }> = {
+  none:    { bg: 'bg-gray-50',  text: 'text-gray-600',  border: 'border-gray-200' },
+  silver:  { bg: 'bg-slate-50', text: 'text-slate-700', border: 'border-slate-200' },
+  gold:    { bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-200' },
+  diamond: { bg: 'bg-cyan-50',  text: 'text-cyan-800',  border: 'border-cyan-200' },
+};
+function fmtVnd(n: number) { return n.toLocaleString('vi-VN'); }
+function MemberAvatar({ row }: { row: MemberRow }) {
+  const initials = (row.fullName ?? row.username ?? 'U').slice(0, 2).toUpperCase();
+  if (row.avatarUrl) return <img src={row.avatarUrl} alt={initials} className="h-8 w-8 rounded-full object-cover" />;
+  return <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-800 text-xs font-bold text-white">{initials}</span>;
+}
 
 type DiscountFormState = {
   discountCode: string;
@@ -88,7 +140,11 @@ export default function ProductDiscounts() {
   const { language } = useLanguage();
   const isVietnamese = language === 'vi';
   const { showToast } = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
 
+  const [activeTab, setActiveTab] = useState<'discounts' | 'membership'>('discounts');
+
+  // ── Discounts state ──
   const [discounts, setDiscounts] = useState<Discount[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -103,6 +159,24 @@ export default function ProductDiscounts() {
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+
+  // ── Membership state ──
+  const tierFilter  = searchParams.get('tier') ?? 'all';
+  const memberPage  = parseInt(searchParams.get('mpage') ?? '1', 10);
+  const [memberSearch, setMemberSearch] = useState(searchParams.get('msearch') ?? '');
+  const [memberSearchInput, setMemberSearchInput] = useState(memberSearch);
+  const [memberData, setMemberData]     = useState<MemberRow[]>([]);
+  const [memberMeta, setMemberMeta]     = useState({ page: 1, limit: 20, total: 0, totalPages: 0 });
+  const [tierStats, setTierStats]       = useState<Record<string, number>>({});
+  const [memberLoading, setMemberLoading] = useState(false);
+  const [settingTier, setSettingTier]     = useState<string | null>(null);
+  const [tierDropdown, setTierDropdown]   = useState<string | null>(null);
+  const [recalcingId, setRecalcingId]     = useState<string | null>(null);
+  const [recalcingAll, setRecalcingAll]   = useState(false);
+  const [showTierSettings, setShowTierSettings] = useState(false);
+  const [tierConfigDraft, setTierConfigDraft]   = useState<TierConfigItem[]>([]);
+  const [tierConfigLoading, setTierConfigLoading] = useState(false);
+  const [tierConfigSaving, setTierConfigSaving]   = useState(false);
 
   const loadDiscounts = useCallback(async () => {
     setLoading(true);
@@ -119,6 +193,90 @@ export default function ProductDiscounts() {
       setLoading(false);
     }
   }, [isVietnamese, showToast]);
+
+  const loadMembers = useCallback(async () => {
+    setMemberLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (tierFilter !== 'all') params.set('tier', tierFilter);
+      if (memberSearch) params.set('search', memberSearch);
+      params.set('page', String(memberPage));
+      params.set('limit', '20');
+      const res = await apiClient.get<OverviewResponse>(`/membership/admin/overview?${params}`);
+      setMemberData(res.data);
+      setMemberMeta(res.meta);
+      setTierStats(res.tierStats);
+    } catch {
+      showToast({ tone: 'error', title: 'Không tải được dữ liệu thành viên' });
+    } finally {
+      setMemberLoading(false);
+    }
+  }, [tierFilter, memberSearch, memberPage, showToast]);
+
+  const handleRecalcOne = async (userId: string) => {
+    setRecalcingId(userId);
+    try {
+      await apiClient.patch(`/membership/admin/${userId}/recalculate`, {});
+      showToast({ tone: 'success', title: 'Đã tính lại hạng theo chi tiêu thực tế' });
+      void loadMembers();
+    } catch {
+      showToast({ tone: 'error', title: 'Tính lại thất bại' });
+    } finally {
+      setRecalcingId(null);
+    }
+  };
+
+  const handleRecalcAll = async () => {
+    setRecalcingAll(true);
+    try {
+      const res = await apiClient.patch<{ updated: number }>('/membership/admin/recalculate-all', {});
+      showToast({ tone: 'success', title: `Đã tính lại hạng cho ${res.updated} thành viên` });
+      void loadMembers();
+    } catch {
+      showToast({ tone: 'error', title: 'Tính lại thất bại' });
+    } finally {
+      setRecalcingAll(false);
+    }
+  };
+
+  const loadTierConfig = useCallback(async () => {
+    setTierConfigLoading(true);
+    try {
+      const data = await apiClient.get<TierConfigItem[]>('/membership/admin/tier-config');
+      setTierConfigDraft(data);
+    } catch {
+      showToast({ tone: 'error', title: 'Không tải được cấu hình hạng' });
+    } finally {
+      setTierConfigLoading(false);
+    }
+  }, [showToast]);
+
+  const handleSaveTierConfig = async () => {
+    setTierConfigSaving(true);
+    try {
+      const saved = await apiClient.patch<TierConfigItem[]>('/membership/admin/tier-config', tierConfigDraft);
+      setTierConfigDraft(saved);
+      showToast({ tone: 'success', title: 'Đã lưu cấu hình ngưỡng hạng thành viên' });
+    } catch {
+      showToast({ tone: 'error', title: 'Lưu thất bại' });
+    } finally {
+      setTierConfigSaving(false);
+    }
+  };
+
+  const handleSetTier = async (userId: string, tier: string) => {
+    setSettingTier(userId);
+    setTierDropdown(null);
+    try {
+      await apiClient.patch(`/membership/admin/${userId}/set-tier/${tier}`, {});
+      showToast({ tone: 'success', title: 'Đã cập nhật hạng thành viên' });
+      void loadMembers();
+    } catch {
+      showToast({ tone: 'error', title: 'Cập nhật thất bại' });
+    } finally {
+      setSettingTier(null);
+    }
+  };
 
   useEffect(() => {
     void loadDiscounts();
@@ -137,6 +295,13 @@ export default function ProductDiscounts() {
     }
     void loadRefs();
   }, [loadDiscounts]);
+
+  useEffect(() => {
+    if (activeTab === 'membership') {
+      void loadMembers();
+      void loadTierConfig();
+    }
+  }, [activeTab, loadMembers, loadTierConfig]);
 
   function openCreate() {
     setEditTarget(null);
@@ -305,6 +470,7 @@ export default function ProductDiscounts() {
 
   return (
     <div className="space-y-8 pb-12">
+      {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="font-headline text-[2.7rem] font-black tracking-tight text-primary">
@@ -312,20 +478,46 @@ export default function ProductDiscounts() {
           </h1>
           <p className="mt-2 max-w-3xl text-sm leading-relaxed text-on-surface-variant">
             {isVietnamese
-              ? 'Quản lý toàn bộ mã giảm giá: tạo mới, chỉnh sửa, bật/tắt và theo dõi lượt sử dụng.'
-              : 'Manage all discount codes: create, edit, toggle and track usage.'}
+              ? 'Quản lý mã giảm giá và chương trình khách hàng thân thiết.'
+              : 'Manage discount codes and loyalty programs.'}
           </p>
         </div>
+        {activeTab === 'discounts' && (
+          <button
+            type="button"
+            onClick={openCreate}
+            className="flex shrink-0 items-center gap-2 rounded-2xl bg-primary px-5 py-3 text-sm font-black text-white shadow-sm hover:opacity-90"
+          >
+            <Plus size={18} />
+            {isVietnamese ? 'Thêm giảm giá' : 'Add discount'}
+          </button>
+        )}
+      </div>
+
+      {/* Tab bar */}
+      <div className="flex gap-1 rounded-2xl bg-on-surface-variant/5 p-1.5 w-fit">
         <button
-          type="button"
-          onClick={openCreate}
-          className="flex shrink-0 items-center gap-2 rounded-2xl bg-primary px-5 py-3 text-sm font-black text-white shadow-sm hover:opacity-90"
+          onClick={() => setActiveTab('discounts')}
+          className={`flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-black transition ${
+            activeTab === 'discounts' ? 'bg-white text-primary shadow-sm' : 'text-on-surface-variant hover:text-on-surface'
+          }`}
         >
-          <Plus size={18} />
-          {isVietnamese ? 'Thêm giảm giá' : 'Add discount'}
+          <BadgePercent size={15} />
+          {isVietnamese ? 'Mã giảm giá' : 'Discount codes'}
+        </button>
+        <button
+          onClick={() => setActiveTab('membership')}
+          className={`flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-black transition ${
+            activeTab === 'membership' ? 'bg-white text-primary shadow-sm' : 'text-on-surface-variant hover:text-on-surface'
+          }`}
+        >
+          <Award size={15} />
+          {isVietnamese ? 'Thành viên thân thiết' : 'Loyalty members'}
         </button>
       </div>
 
+      {/* ── TAB: Discounts ── */}
+      {activeTab === 'discounts' && (
       <section className="rounded-xl border border-on-surface-variant/5 bg-white p-6 shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full text-left">
@@ -447,6 +639,274 @@ export default function ProductDiscounts() {
           </table>
         </div>
       </section>
+
+      )}
+
+      {/* ── TAB: Membership ── */}
+      {activeTab === 'membership' && (
+        <div className="space-y-5">
+          {/* Membership header row */}
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-on-surface-variant">
+              Hạng được tính tự động theo tổng đơn hàng đã giao. Nhấn <strong>Tính lại</strong> để cập nhật thủ công.
+            </p>
+            <div className="flex shrink-0 items-center gap-2">
+              <button
+                onClick={() => { setShowTierSettings((v) => !v); }}
+                className="flex items-center gap-2 rounded-2xl border border-on-surface-variant/10 px-4 py-2 text-sm font-bold text-on-surface hover:bg-on-surface-variant/5 transition"
+              >
+                <Settings size={14} />
+                Cài đặt ngưỡng
+              </button>
+              <button
+                onClick={() => void handleRecalcAll()}
+                disabled={recalcingAll}
+                className="flex items-center gap-2 rounded-2xl border border-on-surface-variant/10 px-4 py-2 text-sm font-bold text-on-surface hover:bg-on-surface-variant/5 transition disabled:opacity-50"
+              >
+                {recalcingAll ? <LoaderCircle size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                Tính lại tất cả
+              </button>
+            </div>
+          </div>
+
+          {/* Tier Settings Panel */}
+          {showTierSettings && (
+            <section className="rounded-2xl border border-amber-200 bg-amber-50/60 p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-black text-amber-900">Cài đặt ngưỡng hạng thành viên</h3>
+                {tierConfigLoading && <LoaderCircle size={14} className="animate-spin text-amber-600" />}
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-[10px] font-black uppercase tracking-[0.18em] text-amber-700/60">
+                      <th className="pb-3 pr-4 text-left">Hạng</th>
+                      <th className="pb-3 pr-4 text-left">Chi tiêu tối thiểu (₫)</th>
+                      <th className="pb-3 pr-4 text-left">Giảm giá thưởng (%)</th>
+                      <th className="pb-3 text-left">Hiệu lực coupon (ngày)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-amber-100">
+                    {tierConfigDraft.map((cfg, idx) => {
+                      const dot = cfg.tier === 'silver' ? 'bg-slate-400' : cfg.tier === 'gold' ? 'bg-amber-400' : 'bg-cyan-400';
+                      const lbl = cfg.tier === 'silver' ? 'Bạc' : cfg.tier === 'gold' ? 'Vàng' : 'Kim Cương';
+                      return (
+                        <tr key={cfg.tier}>
+                          <td className="py-3 pr-4">
+                            <span className="flex items-center gap-2 font-bold text-on-surface">
+                              <span className={`h-2.5 w-2.5 rounded-full ${dot}`} />{lbl}
+                            </span>
+                          </td>
+                          <td className="py-3 pr-4">
+                            <input
+                              type="number"
+                              min={0}
+                              step={100000}
+                              value={cfg.minSpent}
+                              onChange={(e) => setTierConfigDraft((prev) => prev.map((c, i) => i === idx ? { ...c, minSpent: Number(e.target.value) } : c))}
+                              className="input-base w-40 text-right"
+                            />
+                          </td>
+                          <td className="py-3 pr-4">
+                            <input
+                              type="number"
+                              min={0}
+                              max={100}
+                              value={cfg.discountPercent}
+                              onChange={(e) => setTierConfigDraft((prev) => prev.map((c, i) => i === idx ? { ...c, discountPercent: Number(e.target.value) } : c))}
+                              className="input-base w-24 text-right"
+                            />
+                          </td>
+                          <td className="py-3">
+                            <input
+                              type="number"
+                              min={1}
+                              value={cfg.couponValidDays}
+                              onChange={(e) => setTierConfigDraft((prev) => prev.map((c, i) => i === idx ? { ...c, couponValidDays: Number(e.target.value) } : c))}
+                              className="input-base w-24 text-right"
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div className="flex justify-end">
+                <button
+                  onClick={() => void handleSaveTierConfig()}
+                  disabled={tierConfigSaving || tierConfigLoading}
+                  className="flex items-center gap-2 rounded-2xl bg-amber-500 px-5 py-2.5 text-sm font-black text-white hover:bg-amber-600 disabled:opacity-50 transition"
+                >
+                  {tierConfigSaving ? <LoaderCircle size={14} className="animate-spin" /> : <Save size={14} />}
+                  Lưu cài đặt
+                </button>
+              </div>
+            </section>
+          )}
+
+          {/* Stat cards */}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {TIERS.filter((t) => t.value !== 'all').map((t) => {
+              const s = STAT_CARD[t.value];
+              const count = tierStats[t.value] ?? 0;
+              return (
+                <button
+                  key={t.value}
+                  onClick={() => setSearchParams((p) => { p.set('tier', t.value); p.set('mpage', '1'); return p; })}
+                  className={`rounded-2xl border p-4 text-left transition hover:shadow-sm ${s.bg} ${s.border} ${tierFilter === t.value ? 'ring-2 ring-offset-1 ring-amber-400' : ''}`}
+                >
+                  <div className={`mb-1 flex items-center gap-2 text-xs font-bold uppercase tracking-wide ${s.text}`}>
+                    <span className={`h-2 w-2 rounded-full ${t.dot}`} />{t.label}
+                  </div>
+                  <p className={`text-2xl font-black ${s.text}`}>{fmtVnd(count)}</p>
+                  <p className="mt-0.5 text-xs text-gray-400">khách hàng</p>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Filters */}
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex gap-1 rounded-xl bg-on-surface-variant/5 p-1">
+              {TIERS.map((t) => (
+                <button
+                  key={t.value}
+                  onClick={() => setSearchParams((p) => { p.set('tier', t.value); p.set('mpage', '1'); return p; })}
+                  className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                    tierFilter === t.value ? 'bg-white text-on-surface shadow-sm' : 'text-on-surface-variant hover:text-on-surface'
+                  }`}
+                >
+                  <span className={`h-1.5 w-1.5 rounded-full ${t.dot}`} />{t.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-1 items-center gap-2 min-w-[220px]">
+              <div className="relative flex-1">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant/50" />
+                <input
+                  value={memberSearchInput}
+                  onChange={(e) => setMemberSearchInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      setMemberSearch(memberSearchInput);
+                      setSearchParams((p) => { p.set('msearch', memberSearchInput); p.set('mpage', '1'); return p; });
+                    }
+                  }}
+                  placeholder="Tìm theo tên, email..."
+                  className="input-base w-full pl-8"
+                />
+              </div>
+              <button
+                onClick={() => { setMemberSearch(memberSearchInput); setSearchParams((p) => { p.set('msearch', memberSearchInput); p.set('mpage', '1'); return p; }); }}
+                className="flex items-center gap-2 rounded-2xl bg-primary px-4 py-2.5 text-sm font-black text-white hover:opacity-90"
+              >Tìm</button>
+            </div>
+          </div>
+
+          {/* Table */}
+          <section className="rounded-xl border border-on-surface-variant/5 bg-white shadow-sm overflow-hidden">
+            {memberLoading ? (
+              <div className="flex h-48 items-center justify-center">
+                <LoaderCircle size={24} className="animate-spin text-primary" />
+              </div>
+            ) : memberData.length === 0 ? (
+              <div className="flex h-48 flex-col items-center justify-center gap-2 text-on-surface-variant">
+                <Users2 size={32} className="opacity-30" />
+                <p className="text-sm">Không có dữ liệu</p>
+              </div>
+            ) : (
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="border-b border-on-surface-variant/5 text-[10px] font-black uppercase tracking-[0.2em] text-on-surface-variant/40">
+                    <th className="px-4 py-4">Khách hàng</th>
+                    <th className="px-4 py-4">Email</th>
+                    <th className="px-4 py-4">Hạng</th>
+                    <th className="px-4 py-4 text-right">Tổng chi tiêu</th>
+                    <th className="px-4 py-4 text-center">Giảm giá</th>
+                    <th className="px-4 py-4 text-center">Tính lại</th>
+                    <th className="px-4 py-4 text-center">Đặt tay</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-on-surface-variant/5">
+                  {memberData.map((row) => (
+                    <tr key={row.userId} className="hover:bg-on-surface-variant/[0.02]">
+                      <td className="px-4 py-4">
+                        <div className="flex items-center gap-2.5">
+                          <MemberAvatar row={row} />
+                          <div>
+                            <p className="font-bold text-on-surface">{row.fullName ?? row.username}</p>
+                            <p className="text-xs text-on-surface-variant">@{row.username}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-4 text-sm text-on-surface-variant">{row.email}</td>
+                      <td className="px-4 py-4">
+                        <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-bold ${TIER_BADGE[row.tier] ?? TIER_BADGE.none}`}>
+                          <Award size={11} />{row.label}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4 text-right text-sm font-bold text-on-surface">{fmtVnd(row.totalSpent)}₫</td>
+                      <td className="px-4 py-4 text-center text-sm">
+                        {row.discountPercent > 0
+                          ? <span className="font-bold text-emerald-600">-{row.discountPercent}%</span>
+                          : <span className="text-on-surface-variant/40">—</span>}
+                      </td>
+                      <td className="px-4 py-4 text-center">
+                        <button
+                          disabled={recalcingId === row.userId}
+                          onClick={() => void handleRecalcOne(row.userId)}
+                          title="Tính lại theo chi tiêu thực tế"
+                          className="inline-flex items-center gap-1.5 rounded-xl border border-on-surface-variant/10 px-3 py-1.5 text-xs font-bold text-on-surface hover:bg-on-surface-variant/5 transition disabled:opacity-50"
+                        >
+                          {recalcingId === row.userId
+                            ? <LoaderCircle size={12} className="animate-spin" />
+                            : <RefreshCw size={12} />}
+                          Tự động
+                        </button>
+                      </td>
+                      <td className="px-4 py-4 text-center">
+                        <div className="relative inline-block">
+                          <button
+                            disabled={settingTier === row.userId}
+                            onClick={() => setTierDropdown(tierDropdown === row.userId ? null : row.userId)}
+                            className="flex items-center gap-1.5 rounded-xl border border-on-surface-variant/10 px-3 py-1.5 text-xs font-bold text-on-surface hover:bg-on-surface-variant/5 transition disabled:opacity-50"
+                          >
+                            {settingTier === row.userId
+                              ? <LoaderCircle size={12} className="animate-spin" />
+                              : <><span>Đặt hạng</span><ChevronDown size={12} /></>}
+                          </button>
+                          {tierDropdown === row.userId && (
+                            <div className="absolute right-0 z-20 mt-1 w-36 rounded-2xl border border-on-surface-variant/10 bg-white shadow-lg">
+                              {TIERS.filter((t) => t.value !== 'all').map((t) => (
+                                <button
+                                  key={t.value}
+                                  onClick={() => void handleSetTier(row.userId, t.value)}
+                                  className={`flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-left transition hover:bg-on-surface-variant/5 first:rounded-t-2xl last:rounded-b-2xl ${row.tier === t.value ? 'text-primary' : 'text-on-surface'}`}
+                                >
+                                  <span className={`h-2 w-2 rounded-full ${t.dot}`} />{t.label}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </section>
+
+          {memberMeta.totalPages > 1 && (
+            <Pagination
+              currentPage={memberMeta.page}
+              totalPages={memberMeta.totalPages}
+              onPageChange={(p) => setSearchParams((sp) => { sp.set('mpage', String(p)); return sp; })}
+            />
+          )}
+        </div>
+      )}
 
       {/* Create / Edit modal */}
       <Modal

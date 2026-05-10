@@ -92,6 +92,7 @@ export default function PricingPage() {
   const [reloadKey, setReloadKey] = useState(0);
   const [search, setSearch] = useState('');
   const [calcModalOpen, setCalcModalOpen] = useState(false);
+  const [applyingId, setApplyingId] = useState<string | null>(null);
 
   useEffect(() => {
     void apiClient.get<{ items: Product[] }>('/products?limit=500&includeHidden=true').then((d) =>
@@ -108,6 +109,22 @@ export default function PricingPage() {
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [page, reloadKey]);
+
+  async function handleApplyFromList(s: Suggestion) {
+    setApplyingId(s.suggestionId);
+    try {
+      await apiClient.post(`/pricing/suggestions/${s.suggestionId}/apply`, {
+        retailPrice: Number(s.suggestedRetail),
+        bulkPrice: Number(s.suggestedBulk) || undefined,
+      });
+      showToast({ tone: 'success', title: 'Đã áp dụng giá lên sản phẩm' });
+      setReloadKey((k) => k + 1);
+    } catch (err) {
+      showToast({ tone: 'error', title: 'Áp dụng thất bại', description: err instanceof Error ? err.message : '' });
+    } finally {
+      setApplyingId(null);
+    }
+  }
 
   const filteredSuggestions = search.trim()
     ? suggestions.filter((s) => {
@@ -172,13 +189,14 @@ export default function PricingPage() {
                 <th className="px-5 py-4 text-right">Giá thùng đề xuất</th>
                 <th className="px-5 py-4 text-center">Đã áp dụng</th>
                 <th className="px-5 py-4">Ngày tạo</th>
+                <th className="px-5 py-4" />
               </tr>
             </thead>
             <tbody className="divide-y divide-on-surface/6">
               {loading ? (
-                <tr><td colSpan={8} className="py-16 text-center"><LoaderCircle size={18} className="mx-auto animate-spin text-primary" /></td></tr>
+                <tr><td colSpan={9} className="py-16 text-center"><LoaderCircle size={18} className="mx-auto animate-spin text-primary" /></td></tr>
               ) : filteredSuggestions.length === 0 ? (
-                <tr><td colSpan={8} className="py-16 text-center text-on-surface-variant">
+                <tr><td colSpan={9} className="py-16 text-center text-on-surface-variant">
                   <Tag size={28} className="mx-auto mb-3 text-primary/30" />
                   Chưa có đề xuất giá nào
                 </td></tr>
@@ -205,6 +223,19 @@ export default function PricingPage() {
                     </td>
                     <td className="px-5 py-3.5 text-xs text-on-surface-variant">
                       {new Date(s.createdAt).toLocaleDateString('vi-VN')}
+                    </td>
+                    <td className="px-5 py-3.5 text-right">
+                      {!s.appliedAt && (
+                        <button
+                          type="button"
+                          onClick={() => void handleApplyFromList(s)}
+                          disabled={applyingId === s.suggestionId}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-black text-white shadow hover:bg-emerald-700 disabled:opacity-60"
+                        >
+                          {applyingId === s.suggestionId ? <LoaderCircle size={12} className="animate-spin" /> : <CheckCircle size={12} />}
+                          Áp dụng
+                        </button>
+                      )}
                     </td>
                   </tr>
                 );

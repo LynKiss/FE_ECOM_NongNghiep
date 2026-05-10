@@ -1,4 +1,5 @@
 import {
+  Award,
   BarChart3,
   BookOpen,
   Calculator,

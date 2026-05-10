@@ -1,6 +1,6 @@
 import { useState, useEffect, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { User, KeyRound, MapPin, Package, LogOut, Save, LoaderCircle, CheckCircle2, AlertCircle, Heart, ImagePlus } from 'lucide-react';
+import { User, KeyRound, MapPin, Package, LogOut, Save, LoaderCircle, CheckCircle2, AlertCircle, Heart, ImagePlus, Award } from 'lucide-react';
 import { clientApi, logoutClient } from '../../lib/client-api';
 import { useClientSession } from '../../hooks/useClientSession';
 
@@ -13,11 +13,27 @@ type Profile = {
   avatarUrl?: string | null;
 };
 
+type MembershipInfo = {
+  tier: string;
+  label: string;
+  totalSpent: number;
+  discountPercent: number;
+  nextTier: { tier: string; label: string; minSpent: number; remaining: number } | null;
+};
+
+const TIER_STYLE: Record<string, { bg: string; text: string; border: string; dot: string }> = {
+  none:    { bg: 'bg-gray-100',    text: 'text-gray-500',   border: 'border-gray-200',   dot: 'bg-gray-400' },
+  silver:  { bg: 'bg-slate-100',   text: 'text-slate-600',  border: 'border-slate-300',  dot: 'bg-slate-400' },
+  gold:    { bg: 'bg-amber-50',    text: 'text-amber-700',  border: 'border-amber-300',  dot: 'bg-amber-400' },
+  diamond: { bg: 'bg-cyan-50',     text: 'text-cyan-700',   border: 'border-cyan-300',   dot: 'bg-cyan-400' },
+};
+
 export default function Account() {
   const navigate = useNavigate();
   const { session, setSession } = useClientSession();
 
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [membership, setMembership] = useState<MembershipInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
@@ -37,6 +53,11 @@ export default function Account() {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
+
+    void clientApi
+      .get<MembershipInfo>('/membership/my-tier')
+      .then((data) => setMembership(data))
+      .catch(() => {});
   }, [session, navigate]);
 
   const showToast = (type: 'success' | 'error', msg: string) => {
@@ -191,6 +212,44 @@ export default function Account() {
               </p>
               <p className="text-xs text-gray-400">{profile?.email}</p>
             </div>
+
+            {/* Membership tier card */}
+            {membership && (() => {
+              const style = TIER_STYLE[membership.tier] ?? TIER_STYLE.none;
+              const progress = membership.nextTier
+                ? Math.min(100, Math.round(((membership.nextTier.minSpent - membership.nextTier.remaining) / membership.nextTier.minSpent) * 100))
+                : 100;
+              return (
+                <div className={`client-card p-4 ${style.bg} border ${style.border}`}>
+                  <div className="mb-2 flex items-center gap-2">
+                    <Award size={15} className={style.text} />
+                    <span className={`text-xs font-bold uppercase tracking-wide ${style.text}`}>Thành viên</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={`h-2.5 w-2.5 rounded-full ${style.dot}`} />
+                    <span className={`text-sm font-black ${style.text}`}>{membership.label}</span>
+                    {membership.discountPercent > 0 && (
+                      <span className={`ml-auto rounded-full px-2 py-0.5 text-xs font-bold ${style.bg} border ${style.border} ${style.text}`}>
+                        -{membership.discountPercent}%
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-1.5 text-xs text-gray-500">
+                    Đã chi: {membership.totalSpent.toLocaleString('vi-VN')}₫
+                  </p>
+                  {membership.nextTier && (
+                    <>
+                      <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-white/60">
+                        <div className={`h-full rounded-full ${style.dot}`} style={{ width: `${progress}%` }} />
+                      </div>
+                      <p className="mt-1 text-xs text-gray-500">
+                        Còn {membership.nextTier.remaining.toLocaleString('vi-VN')}₫ lên hạng <span className="font-semibold">{membership.nextTier.label}</span>
+                      </p>
+                    </>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Nav */}
             <div className="client-card overflow-hidden">

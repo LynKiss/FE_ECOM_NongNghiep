@@ -775,6 +775,14 @@ function GrTab({
       showToast({ tone: 'error', title: 'Điền đầy đủ thông tin các dòng hàng' });
       return;
     }
+    const overReceivedLines = lines.filter((l) => l.qtyOrdered > 0 && l.qtyReceived > l.qtyOrdered);
+    if (overReceivedLines.length > 0) {
+      showToast({
+        tone: 'warning',
+        title: `${overReceivedLines.length} dòng nhập thừa so với PO`,
+        description: 'Hệ thống vẫn lưu bình thường. Kiểm tra lại nếu không có thỏa thuận với NCC.',
+      });
+    }
     setSaving(true);
     try {
       await apiClient.post('/procurement/goods-receipts', {
@@ -1005,6 +1013,8 @@ function GrTab({
                         void apiClient
                           .get<Po & { items: PoItem[] }>(`/procurement/purchase-orders/${selectedPoId}`)
                           .then((po) => {
+                            // Auto-fill NCC từ PO
+                            setSupplierId(po.supplierId);
                             if (po.items?.length) {
                               setLines(
                                 po.items.map((item) => ({
@@ -1019,6 +1029,8 @@ function GrTab({
                               triggerPreview();
                             }
                           });
+                      } else {
+                        setSupplierId('');
                       }
                     }}
                     className={selectCls}
@@ -1099,6 +1111,13 @@ function GrTab({
                           <FieldWrap label="Số tiền NCC hoàn (₫)">
                             <input type="number" min={0} value={line.refundAmount} onChange={(e) => setLine(idx, { refundAmount: Number(e.target.value) })} className={inputCls} />
                           </FieldWrap>
+                        )}
+                        {/* Cảnh báo nhận thừa */}
+                        {line.qtyOrdered > 0 && line.qtyReceived > line.qtyOrdered && (
+                          <div className="flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                            <span className="font-black">⚠</span>
+                            <span>Nhận thừa: đặt <strong>{line.qtyOrdered}</strong>, nhập <strong>{line.qtyReceived}</strong> (+{line.qtyReceived - line.qtyOrdered}). Hệ thống vẫn cho phép nhưng cần xác nhận với NCC.</span>
+                          </div>
                         )}
                         {/* Preview row */}
                         {prev && (
