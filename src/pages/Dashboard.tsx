@@ -280,6 +280,15 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   const [socketState, setSocketState] = useState<SocketState>('offline');
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const [hiddenBlocks] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem('admin_blocks_config');
+      if (!raw) return new Set<string>();
+      const cfg = JSON.parse(raw) as Array<{ id: string; status: string }>;
+      return new Set(cfg.filter((b) => b.status === 'hidden').map((b) => b.id));
+    } catch { return new Set<string>(); }
+  });
+  const blockVisible = (id: string) => !hiddenBlocks.has(id);
 
   async function refreshDashboard(showLoading = false) {
     if (showLoading) {
@@ -696,7 +705,7 @@ export default function Dashboard() {
         </div>
       ) : null}
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+      {blockVisible('metric_cards') && <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard
           title={isVietnamese ? 'Tổng doanh thu' : 'Total revenue'}
           value={hasReportData ? money(dashboard.totals.revenue) : '-'}
@@ -799,10 +808,10 @@ export default function Dashboard() {
           tone="emerald"
           loading={loading}
         />
-      </div>
+      </div>}
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-4">
-        <ChartCard
+      {(blockVisible('revenue_chart') || blockVisible('order_status_chart')) && <div className="grid grid-cols-1 gap-6 xl:grid-cols-4">
+        {blockVisible('revenue_chart') && <ChartCard
           title={isVietnamese ? 'Doanh thu & đơn hàng 30 ngày' : '30-day revenue and orders'}
           subtitle={isVietnamese ? 'Area = doanh thu, cột = số đơn' : 'Area = revenue, bars = orders'}
           className="xl:col-span-3"
@@ -827,9 +836,9 @@ export default function Dashboard() {
               </ComposedChart>
             </ResponsiveContainer>
           </EmptyState>
-        </ChartCard>
+        </ChartCard>}
 
-        <ChartCard
+        {blockVisible('order_status_chart') && <ChartCard
           title={isVietnamese ? 'Tỷ lệ trạng thái đơn' : 'Order status mix'}
           subtitle={isVietnamese ? 'Phát hiện backlog xử lý' : 'Detect operations backlog'}
         >
@@ -849,11 +858,11 @@ export default function Dashboard() {
               </div>
             ))}
           </div>
-        </ChartCard>
-      </div>
+        </ChartCard>}
+      </div>}
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-        <ChartCard
+      {(blockVisible('top_products_chart') || blockVisible('category_revenue')) && <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+        {blockVisible('top_products_chart') && <ChartCard
           title={isVietnamese ? 'Top sản phẩm bán chạy' : 'Top selling products'}
           subtitle={isVietnamese ? 'Xếp theo số lượng bán' : 'Ranked by sold quantity'}
           className="xl:col-span-2"
@@ -869,9 +878,9 @@ export default function Dashboard() {
               </BarChart>
             </ResponsiveContainer>
           </EmptyState>
-        </ChartCard>
+        </ChartCard>}
 
-        <ChartCard
+        {blockVisible('category_revenue') && <ChartCard
           title={isVietnamese ? 'Doanh thu theo danh mục' : 'Revenue by category'}
           subtitle={isVietnamese ? 'Danh mục nào kéo doanh thu' : 'Which category drives revenue'}
         >
@@ -886,11 +895,11 @@ export default function Dashboard() {
               </BarChart>
             </ResponsiveContainer>
           </EmptyState>
-        </ChartCard>
-      </div>
+        </ChartCard>}
+      </div>}
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-4">
-        <ChartCard
+      {(blockVisible('shopping_hours') || blockVisible('payment_mix') || blockVisible('stock_health')) && <div className="grid grid-cols-1 gap-6 xl:grid-cols-4">
+        {blockVisible('shopping_hours') && <ChartCard
           title={isVietnamese ? 'Giờ vàng mua sắm' : 'Shopping golden hours'}
           subtitle={isVietnamese ? 'Nhiệt doanh thu theo 24 giờ gần đây' : 'Revenue heat by hour in the last 30 days'}
           className="xl:col-span-2"
@@ -911,9 +920,9 @@ export default function Dashboard() {
               </div>
             ))}
           </div>
-        </ChartCard>
+        </ChartCard>}
 
-        <ChartCard
+        {blockVisible('payment_mix') && <ChartCard
           title={isVietnamese ? 'Cơ cấu thanh toán' : 'Payment mix'}
           subtitle={isVietnamese ? 'COD, ví, chuyển khoản...' : 'COD, wallet, bank transfer...'}
         >
@@ -922,9 +931,9 @@ export default function Dashboard() {
             valueFormatter={numberCompact}
             emptyLabel={isVietnamese ? 'Chưa có thanh toán.' : 'No payments.'}
           />
-        </ChartCard>
+        </ChartCard>}
 
-        <ChartCard
+        {blockVisible('stock_health') && <ChartCard
           title={isVietnamese ? 'Sức khỏe tồn kho' : 'Stock health'}
           subtitle={isVietnamese ? 'Hết, thấp, trung bình, tốt' : 'Out, low, medium, healthy'}
         >
@@ -933,11 +942,11 @@ export default function Dashboard() {
             valueFormatter={numberCompact}
             emptyLabel={isVietnamese ? 'Chưa có dữ liệu kho.' : 'No inventory data.'}
           />
-        </ChartCard>
-      </div>
+        </ChartCard>}
+      </div>}
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-        <ChartCard
+      {(blockVisible('inventory_chart') || blockVisible('customer_segments')) && <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+        {blockVisible('inventory_chart') && <ChartCard
           title={isVietnamese ? 'Giá trị tồn kho theo danh mục' : 'Inventory value by category'}
           subtitle={isVietnamese ? 'So sánh vốn đang nằm trong kho' : 'Compare capital locked in inventory'}
           className="xl:col-span-2"
@@ -956,9 +965,9 @@ export default function Dashboard() {
               </ComposedChart>
             </ResponsiveContainer>
           </EmptyState>
-        </ChartCard>
+        </ChartCard>}
 
-        <ChartCard
+        {blockVisible('customer_segments') && <ChartCard
           title={isVietnamese ? 'Phân khúc khách hàng' : 'Customer segments'}
           subtitle={isVietnamese ? 'Chưa mua, mua 1 lần, lặp lại, thân thiết' : 'No order, one-time, repeat, loyal'}
         >
@@ -978,11 +987,11 @@ export default function Dashboard() {
               </div>
             ))}
           </div>
-        </ChartCard>
-      </div>
+        </ChartCard>}
+      </div>}
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-        <ChartCard
+      {(blockVisible('voucher_chart') || blockVisible('new_customers')) && <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+        {blockVisible('voucher_chart') && <ChartCard
           title={isVietnamese ? 'Hiệu quả voucher' : 'Voucher effectiveness'}
           subtitle={isVietnamese ? 'Lượt dùng và doanh thu kéo theo' : 'Usage and attached revenue'}
         >
@@ -997,9 +1006,9 @@ export default function Dashboard() {
               </BarChart>
             </ResponsiveContainer>
           </EmptyState>
-        </ChartCard>
+        </ChartCard>}
 
-        <ChartCard
+        {blockVisible('new_customers') && <ChartCard
           title={isVietnamese ? 'Khách mới 30 ngày' : 'New customers in 30 days'}
           subtitle={isVietnamese ? 'Tốc độ tăng khách hàng' : 'Customer acquisition speed'}
         >
@@ -1014,7 +1023,7 @@ export default function Dashboard() {
               </LineChart>
             </ResponsiveContainer>
           </EmptyState>
-        </ChartCard>
+        </ChartCard>}
 
         <ChartCard
           title={isVietnamese ? 'Đánh giá & chẩn đoán lúa' : 'Reviews and rice diagnosis'}
@@ -1036,7 +1045,7 @@ export default function Dashboard() {
             />
           </div>
         </ChartCard>
-      </div>
+      </div>}
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         <DataPanel

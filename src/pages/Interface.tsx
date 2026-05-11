@@ -289,9 +289,9 @@ const INITIAL_SECTIONS: HomepageSection[] = [
 ];
 
 const THEME_OPTIONS = [
-  { id: 'botanical', name: 'Botanical Enterprise', version: '2.4.1', primary: '#1b5e20', accent: '#d9f7c9', bg: '#f4f7f1' },
-  { id: 'harvest', name: 'Harvest Gold', version: '1.2.0', primary: '#92400e', accent: '#fde68a', bg: '#fffbeb' },
-  { id: 'midnight', name: 'Midnight Field', version: '1.0.0', primary: '#8bdc8b', accent: '#1d3a29', bg: '#0f1713' },
+  { id: 'botanical', name: 'Botanical Enterprise', version: '2.4.1', primary: '#1b5e20', accent: '#d9f7c9', bg: '#f4f7f1', houseColor: '#1E3932', starbucksColor: '#006241', greenAccent: '#00754A', neutralWarm: '#f2f0eb' },
+  { id: 'harvest',   name: 'Harvest Gold',         version: '1.2.0', primary: '#92400e', accent: '#fde68a', bg: '#fffbeb', houseColor: '#451a03', starbucksColor: '#78350f', greenAccent: '#d97706', neutralWarm: '#fef9f0' },
+  { id: 'midnight',  name: 'Midnight Field',        version: '1.0.0', primary: '#8bdc8b', accent: '#1d3a29', bg: '#0f1713', houseColor: '#0a0f0d', starbucksColor: '#1d3a29', greenAccent: '#8bdc8b', neutralWarm: '#0f1713' },
 ];
 
 const TYPOGRAPHY_OPTIONS = [
@@ -300,12 +300,21 @@ const TYPOGRAPHY_OPTIONS = [
   { id: 'nunito', label: 'Nunito Sans', preview: 'Aa' },
 ];
 
-type Block = { id: string; title: string; position: string; role: string; status: 'active' | 'hidden' };
+const BLOCKS_STORAGE_KEY = 'admin_blocks_config';
+type Block = { id: string; title: string; desc: string; status: 'active' | 'hidden' };
 const INITIAL_BLOCKS: Block[] = [
-  { id: 'b1', title: 'Biểu đồ sản lượng thu hoạch', position: 'Trang chủ (đầu trang)', role: 'Tất cả người dùng', status: 'active' },
-  { id: 'b2', title: 'Widget thời tiết khu vực', position: 'Thanh bên phải', role: 'Quản lý', status: 'active' },
-  { id: 'b3', title: 'Cảnh báo tồn kho thấp', position: 'Trang kho hàng', role: 'Tất cả người dùng', status: 'hidden' },
-  { id: 'b4', title: 'Biểu đồ xu hướng bán hàng', position: 'Trang báo cáo', role: 'Quản trị viên', status: 'active' },
+  { id: 'metric_cards',      title: 'Thẻ số liệu tổng quan',        desc: 'Doanh thu, đơn hàng, khách hàng, tồn kho, đánh giá...', status: 'active' },
+  { id: 'revenue_chart',     title: 'Doanh thu & đơn hàng 30 ngày', desc: 'Biểu đồ doanh thu theo ngày kết hợp số đơn',            status: 'active' },
+  { id: 'order_status_chart',title: 'Tỷ lệ trạng thái đơn',         desc: 'Donut chart phát hiện backlog xử lý đơn',               status: 'active' },
+  { id: 'top_products_chart',title: 'Top sản phẩm bán chạy',         desc: 'Bar chart xếp hạng sản phẩm theo số lượng bán',         status: 'active' },
+  { id: 'category_revenue',  title: 'Doanh thu theo danh mục',       desc: 'So sánh doanh thu từng danh mục sản phẩm',             status: 'active' },
+  { id: 'shopping_hours',    title: 'Giờ vàng mua sắm',              desc: 'Heatmap doanh thu theo 24 giờ trong ngày',             status: 'active' },
+  { id: 'payment_mix',       title: 'Cơ cấu thanh toán',             desc: 'Tỷ lệ COD, ví điện tử, chuyển khoản...',               status: 'active' },
+  { id: 'stock_health',      title: 'Sức khỏe tồn kho',              desc: 'Phân tích hàng hết, thấp, trung bình, đủ hàng',        status: 'active' },
+  { id: 'inventory_chart',   title: 'Giá trị tồn kho theo danh mục', desc: 'Vốn đang nằm trong kho so với tồn khả dụng',           status: 'active' },
+  { id: 'customer_segments', title: 'Phân khúc khách hàng',          desc: 'Chưa mua, mua 1 lần, lặp lại, thân thiết',             status: 'active' },
+  { id: 'voucher_chart',     title: 'Hiệu quả voucher',              desc: 'Lượt dùng và doanh thu kéo theo từng mã',              status: 'active' },
+  { id: 'new_customers',     title: 'Khách mới 30 ngày',             desc: 'Biểu đồ tốc độ tăng trưởng khách hàng mới',           status: 'active' },
 ];
 
 const TABS = [
@@ -363,6 +372,7 @@ export default function Interface() {
   const [density, setDensity] = useState<'comfortable' | 'compact' | 'spacious'>('comfortable');
   const [mode, setMode] = useState<'light' | 'dark'>('light');
   const [previewDevice, setPreviewDevice] = useState<'desktop' | 'mobile'>('desktop');
+  const [previewKey, setPreviewKey] = useState(0);
 
   // Advanced custom theme
   const loadAdvancedTheme = () => {
@@ -394,8 +404,20 @@ export default function Interface() {
     sticky: boolean;
   }>(loadAdvancedTheme());
 
-  // Block state
-  const [blocks, setBlocks] = useState<Block[]>(INITIAL_BLOCKS);
+  // Block state — persisted to localStorage
+  const [blocks, setBlocks] = useState<Block[]>(() => {
+    try {
+      const saved = localStorage.getItem(BLOCKS_STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved) as Block[];
+        return INITIAL_BLOCKS.map((b) => ({
+          ...b,
+          status: parsed.find((p) => p.id === b.id)?.status ?? b.status,
+        }));
+      }
+    } catch {}
+    return INITIAL_BLOCKS;
+  });
 
   // Drag-and-drop state for sections
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -466,7 +488,12 @@ export default function Interface() {
   };
 
   const toggleBlock = (id: string) => {
-    setBlocks((prev) => prev.map((b) => (b.id === id ? { ...b, status: b.status === 'active' ? 'hidden' : 'active' } : b)));
+    setBlocks((prev) => {
+      const next = prev.map((b) => (b.id === id ? { ...b, status: (b.status === 'active' ? 'hidden' : 'active') as Block['status'] } : b));
+      try { localStorage.setItem(BLOCKS_STORAGE_KEY, JSON.stringify(next)); } catch {}
+      return next;
+    });
+    showToast({ tone: 'success', title: blocks.find((b) => b.id === id)?.status === 'active' ? 'Đã ẩn khối' : 'Đã bật khối' });
   };
 
   const handleDragStart = (index: number) => {
@@ -505,16 +532,26 @@ export default function Interface() {
       advanced.primaryColor !== (THEME_OPTIONS.find((t) => t.id === activeTheme)?.primary ?? '');
 
     const theme = THEME_OPTIONS.find((t) => t.id === activeTheme);
-    if (theme && !useAdvanced) {
+    // Structural layout colors (header/footer bg, logo) ALWAYS come from theme preset
+    if (theme) {
+      document.documentElement.style.setProperty('--client-house-green', theme.houseColor);
+      document.documentElement.style.setProperty('--client-starbucks-green', theme.starbucksColor);
+      document.documentElement.style.setProperty('--client-neutral-warm', theme.neutralWarm);
+    }
+    // Advanced custom override only applies to accent/button colors, not structural
+    if (useAdvanced) {
+      document.documentElement.style.setProperty('--client-primary', advanced.primaryColor);
+      document.documentElement.style.setProperty('--client-green-accent', advanced.primaryColor);
+      if (advanced.accentColor) document.documentElement.style.setProperty('--client-accent', advanced.accentColor);
+      if (advanced.bgColor) document.documentElement.style.setProperty('--client-bg', advanced.bgColor);
+    } else if (theme) {
       document.documentElement.style.setProperty('--client-primary', theme.primary);
       document.documentElement.style.setProperty('--client-accent', theme.accent);
       document.documentElement.style.setProperty('--client-bg', theme.bg);
-    } else {
-      document.documentElement.style.setProperty('--client-primary', advanced.primaryColor);
-      document.documentElement.style.setProperty('--client-accent', advanced.accentColor);
-      document.documentElement.style.setProperty('--client-bg', advanced.bgColor);
+      document.documentElement.style.setProperty('--client-green-accent', theme.greenAccent);
     }
     document.documentElement.style.setProperty('--client-radius', `${advanced.borderRadius}px`);
+    setPreviewKey((k) => k + 1);
     showToast({ tone: 'success', title: 'Đã lưu cài đặt giao diện', description: 'Thay đổi được áp dụng cho cửa hàng client.' });
   };
 
@@ -1021,10 +1058,15 @@ export default function Interface() {
                 </div>
                 <div className="ml-2 flex-1 rounded-full bg-on-surface-variant/8 px-3 py-1 text-xs text-on-surface-variant/50">localhost:5173/client</div>
               </div>
-              <div className="mx-auto transition-all duration-300" style={{ maxWidth: previewDevice === 'mobile' ? '375px' : '100%' }}>
-                <div className="flex h-48 items-center justify-center text-center">
-                  <p className="text-sm text-on-surface-variant/40">Live preview sẽ có trong phiên bản tiếp theo</p>
-                </div>
+              <div className="mx-auto transition-all duration-300 overflow-hidden" style={{ maxWidth: previewDevice === 'mobile' ? '390px' : '100%' }}>
+                <iframe
+                  key={previewKey}
+                  src="/client"
+                  title="Client preview"
+                  className="w-full border-0"
+                  style={{ height: previewDevice === 'mobile' ? '700px' : '540px', pointerEvents: 'none' }}
+                  sandbox="allow-scripts allow-same-origin"
+                />
               </div>
             </div>
           </section>
@@ -1051,24 +1093,20 @@ export default function Interface() {
               <div key={block.id}
                 className={`group flex items-center justify-between px-5 py-4 transition-colors hover:bg-primary/[0.02] ${index > 0 ? 'border-t border-on-surface-variant/5' : ''} ${block.status === 'hidden' ? 'opacity-50' : ''}`}>
                 <div className="flex items-center gap-4">
-                  <GripVertical className="cursor-grab text-on-surface-variant/20 group-hover:text-primary/30" size={18} />
-                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl" style={{ background: block.status === 'active' ? 'rgba(27,94,32,0.08)' : 'rgba(0,0,0,0.04)' }}>
-                    <Layout size={20} className={block.status === 'active' ? 'text-primary' : 'text-on-surface-variant/30'} />
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl" style={{ background: block.status === 'active' ? 'rgba(27,94,32,0.08)' : 'rgba(0,0,0,0.04)' }}>
+                    <Layout size={18} className={block.status === 'active' ? 'text-primary' : 'text-on-surface-variant/30'} />
                   </div>
                   <div>
                     <p className="font-bold text-on-surface">{block.title}</p>
-                    <p className="mt-0.5 text-xs text-on-surface-variant/50">Vị trí: {block.position} · {block.role}</p>
+                    <p className="mt-0.5 text-xs text-on-surface-variant/50">{block.desc}</p>
                   </div>
                 </div>
-                <div className="flex items-center gap-4">
-                  <button onClick={() => toggleBlock(block.id)}
-                    className={`flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-black uppercase tracking-wider transition ${block.status === 'active' ? 'bg-green-50 text-green-700 hover:bg-green-100' : 'bg-on-surface-variant/8 text-on-surface-variant/60 hover:bg-on-surface-variant/12'}`}>
-                    {block.status === 'active' ? <><Eye size={11} />Đang bật</> : <><EyeOff size={11} />Đang ẩn</>}
-                  </button>
-                  <button className="rounded-xl p-1.5 text-on-surface-variant/30 transition hover:text-primary">
-                    <ChevronRight size={16} />
-                  </button>
-                </div>
+                <button onClick={() => toggleBlock(block.id)}
+                  className="transition hover:scale-110 shrink-0 ml-4">
+                  {block.status === 'active'
+                    ? <ToggleRight size={28} className="text-primary" />
+                    : <ToggleLeft size={28} className="text-on-surface-variant/30" />}
+                </button>
               </div>
             ))}
           </div>

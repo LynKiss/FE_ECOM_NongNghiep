@@ -59,6 +59,33 @@ type CategoryTab = {
 
 type CategoryTree = CategoryTab & { children: CategoryTab[] };
 
+type BrandConfig = {
+  brandName: string;
+  hotline: string;
+  footerText: string;
+};
+
+const DEFAULT_BRAND: BrandConfig = {
+  brandName: 'Cultivated Ledger',
+  hotline: '1800 6863',
+  footerText: '© 2025 Cultivated Ledger. Bảo lưu mọi quyền.',
+};
+
+function loadBrandConfig(): BrandConfig {
+  try {
+    const raw = localStorage.getItem('client_theme_advanced');
+    if (!raw) return DEFAULT_BRAND;
+    const parsed = JSON.parse(raw) as Partial<BrandConfig>;
+    return {
+      brandName: parsed.brandName?.trim() || DEFAULT_BRAND.brandName,
+      hotline: parsed.hotline?.trim() || DEFAULT_BRAND.hotline,
+      footerText: parsed.footerText?.trim() || DEFAULT_BRAND.footerText,
+    };
+  } catch {
+    return DEFAULT_BRAND;
+  }
+}
+
 export default function ClientLayout() {
   const { session } = useClientSession();
   const { cart } = useCart();
@@ -76,6 +103,7 @@ export default function ClientLayout() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [categoryTree, setCategoryTree] = useState<CategoryTree[]>([]);
   const [megaMenuOpen, setMegaMenuOpen] = useState(false);
+  const [brand, setBrand] = useState<BrandConfig>(loadBrandConfig);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -103,22 +131,46 @@ export default function ClientLayout() {
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
-  // Apply client theme from Interface settings
+  // Apply client theme + advanced config from Interface settings
   useEffect(() => {
+    type ThemeColors = { primary: string; accent: string; bg: string; houseColor: string; starbucksColor: string; greenAccent: string; neutralWarm: string };
+    const THEMES: Record<string, ThemeColors> = {
+      botanical: { primary: '#1b5e20', accent: '#d9f7c9', bg: '#f4f7f1', houseColor: '#1E3932', starbucksColor: '#006241', greenAccent: '#00754A', neutralWarm: '#f2f0eb' },
+      harvest:   { primary: '#92400e', accent: '#fde68a', bg: '#fffbeb', houseColor: '#451a03', starbucksColor: '#78350f', greenAccent: '#d97706', neutralWarm: '#fef9f0' },
+      midnight:  { primary: '#8bdc8b', accent: '#1d3a29', bg: '#0f1713', houseColor: '#0a0f0d', starbucksColor: '#1d3a29', greenAccent: '#8bdc8b', neutralWarm: '#0f1713' },
+    };
     try {
       const raw = localStorage.getItem('client_theme_config');
-      if (!raw) return;
-      const cfg = JSON.parse(raw) as { themeId?: string; primaryColor?: string; fontId?: string };
-      const THEMES: Record<string, { primary: string; accent: string; bg: string }> = {
-        botanical: { primary: '#1b5e20', accent: '#d9f7c9', bg: '#f4f7f1' },
-        harvest: { primary: '#92400e', accent: '#fde68a', bg: '#fffbeb' },
-        midnight: { primary: '#8bdc8b', accent: '#1d3a29', bg: '#0f1713' },
-      };
-      const theme = cfg.themeId ? THEMES[cfg.themeId] : null;
-      if (theme) {
-        document.documentElement.style.setProperty('--client-primary', theme.primary);
-        document.documentElement.style.setProperty('--client-accent', theme.accent);
-        document.documentElement.style.setProperty('--client-bg', theme.bg);
+      if (raw) {
+        const cfg = JSON.parse(raw) as { themeId?: string };
+        const theme = cfg.themeId ? THEMES[cfg.themeId] : null;
+        if (theme) {
+          document.documentElement.style.setProperty('--client-house-green', theme.houseColor);
+          document.documentElement.style.setProperty('--client-starbucks-green', theme.starbucksColor);
+          document.documentElement.style.setProperty('--client-green-accent', theme.greenAccent);
+          document.documentElement.style.setProperty('--client-neutral-warm', theme.neutralWarm);
+        }
+      }
+    } catch { }
+    try {
+      const rawAdv = localStorage.getItem('client_theme_advanced');
+      if (rawAdv) {
+        const adv = JSON.parse(rawAdv) as {
+          primaryColor?: string; accentColor?: string; bgColor?: string; borderRadius?: number;
+          brandName?: string; hotline?: string; footerText?: string;
+        };
+        if (adv.primaryColor) {
+          document.documentElement.style.setProperty('--client-primary', adv.primaryColor);
+        }
+        if (adv.accentColor) document.documentElement.style.setProperty('--client-accent', adv.accentColor);
+        if (adv.bgColor) document.documentElement.style.setProperty('--client-bg', adv.bgColor);
+        if (adv.borderRadius !== undefined)
+          document.documentElement.style.setProperty('--client-radius', `${adv.borderRadius}px`);
+        setBrand({
+          brandName: adv.brandName?.trim() || DEFAULT_BRAND.brandName,
+          hotline: adv.hotline?.trim() || DEFAULT_BRAND.hotline,
+          footerText: adv.footerText?.trim() || DEFAULT_BRAND.footerText,
+        });
       }
     } catch { }
   }, []);
@@ -226,12 +278,12 @@ export default function ClientLayout() {
   return (
     <div className="client-surface flex min-h-screen flex-col">
       {/* Top bar */}
-      <div style={{ background: '#1E3932' }} className="hidden text-white/70 lg:block">
+      <div style={{ background: 'var(--client-house-green)' }} className="hidden text-white/70 lg:block">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-2 text-xs">
           <div className="flex items-center gap-6">
             <span className="flex items-center gap-1.5">
               <Phone size={11} />
-              1800 6863
+              {brand.hotline}
             </span>
             <span className="flex items-center gap-1.5">
               <Mail size={11} />
@@ -249,22 +301,22 @@ export default function ClientLayout() {
       <header
         className={`sticky top-0 z-50 transition-shadow duration-300 ${scrolled ? 'shadow-[0_1px_3px_rgba(0,0,0,0.1),0_2px_2px_rgba(0,0,0,0.06),0_0_2px_rgba(0,0,0,0.07)]' : ''
           }`}
-        style={{ background: '#f2f0eb' }}
+        style={{ background: 'var(--client-neutral-warm)' }}
       >
         <div className="mx-auto flex max-w-7xl items-center gap-4 px-4 py-3 lg:px-6 lg:py-4">
           {/* Logo */}
           <Link to="/client" className="flex shrink-0 items-center gap-2.5">
             <div
               className="flex h-9 w-9 items-center justify-center rounded-full"
-              style={{ background: '#006241' }}
+              style={{ background: 'var(--client-starbucks-green)' }}
             >
               <Leaf size={18} className="text-white" />
             </div>
             <div className="hidden sm:block">
-              <p className="text-[10px] font-bold uppercase tracking-[0.3em]" style={{ color: '#006241' }}>
-                Cultivated Ledger
+              <p className="text-[10px] font-bold uppercase tracking-[0.3em]" style={{ color: 'var(--client-starbucks-green)' }}>
+                {brand.brandName}
               </p>
-              <p className="text-xs font-black leading-none" style={{ color: '#1E3932' }}>
+              <p className="text-xs font-black leading-none" style={{ color: 'var(--client-house-green)' }}>
                 Vật Tư Nông Nghiệp
               </p>
             </div>
@@ -590,7 +642,7 @@ export default function ClientLayout() {
               <button
                 onClick={() => setSearchOpen(true)}
                 className="flex h-9 w-9 items-center justify-center rounded-full transition hover:bg-[#006241]/10"
-                style={{ color: '#1E3932' }}
+                style={{ color: 'var(--client-house-green)' }}
               >
                 <Search size={18} />
               </button>
@@ -619,7 +671,7 @@ export default function ClientLayout() {
                     }
                   }}
                   className="relative flex h-9 w-9 items-center justify-center rounded-full transition hover:bg-[#006241]/10"
-                  style={{ color: '#1E3932' }}
+                  style={{ color: 'var(--client-house-green)' }}
                 >
                   <Bell size={18} />
                   {notifications.filter((n) => !n.isRead).length > 0 && (
@@ -631,7 +683,7 @@ export default function ClientLayout() {
                 {notifOpen && (
                   <div className="client-menu-surface absolute right-0 top-full mt-2 w-80 overflow-hidden">
                     <div className="border-b border-black/5 px-4 py-3">
-                      <p className="text-sm font-bold text-[#1E3932]">Thông báo</p>
+                      <p className="text-sm font-bold" style={{ color: 'var(--client-house-green)' }}>Thông báo</p>
                     </div>
                     <div className="max-h-80 overflow-y-auto">
                       {notifications.length === 0 ? (
@@ -648,7 +700,7 @@ export default function ClientLayout() {
                                 <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#006241]" />
                               )}
                               <div className={n.isRead ? 'pl-4' : ''}>
-                                <p className="text-xs font-semibold text-[#1E3932]">{n.title}</p>
+                                <p className="text-xs font-semibold" style={{ color: 'var(--client-house-green)' }}>{n.title}</p>
                                 <p className="mt-0.5 text-xs text-gray-500 line-clamp-2">{n.message}</p>
                                 {n.createdAt && (
                                   <p className="mt-1 text-[10px] text-gray-400">
@@ -686,7 +738,7 @@ export default function ClientLayout() {
               <Link
                 to="/client/wishlist"
                 className="relative flex h-9 w-9 items-center justify-center rounded-full transition hover:bg-[#006241]/10"
-                style={{ color: '#1E3932' }}
+                style={{ color: 'var(--client-house-green)' }}
               >
                 <Heart size={18} />
               </Link>
@@ -697,7 +749,7 @@ export default function ClientLayout() {
               to="/client/cart"
               data-cart-icon="true"
               className="relative flex h-9 w-9 items-center justify-center rounded-full transition hover:bg-[#006241]/10"
-              style={{ color: '#1E3932' }}
+              style={{ color: 'var(--client-house-green)' }}
             >
               <ShoppingCart size={18} />
               {cartCount > 0 && (
@@ -716,7 +768,7 @@ export default function ClientLayout() {
                 >
                   <div
                     className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-full text-xs font-bold text-white"
-                    style={{ background: '#006241' }}
+                    style={{ background: 'var(--client-starbucks-green)' }}
                   >
                     {session.user.avatarUrl ? (
                       <img src={session.user.avatarUrl} alt="" className="h-full w-full object-cover" />
@@ -724,12 +776,13 @@ export default function ClientLayout() {
                       (displayName[0] ?? 'U').toUpperCase()
                     )}
                   </div>
-                  <span className="hidden text-sm font-semibold text-[#1E3932] lg:block">
+                  <span className="hidden text-sm font-semibold lg:block" style={{ color: 'var(--client-house-green)' }}>
                     {displayName}
                   </span>
                   <ChevronDown
                     size={14}
-                    className={`text-[#1E3932] transition-transform ${userMenuOpen ? 'rotate-180' : ''}`}
+                    style={{ color: 'var(--client-house-green)' }}
+                    className={`transition-transform ${userMenuOpen ? 'rotate-180' : ''}`}
                   />
                 </button>
 
@@ -784,7 +837,7 @@ export default function ClientLayout() {
             <button
               onClick={() => setMobileOpen(!mobileOpen)}
               className="flex h-9 w-9 items-center justify-center rounded-full transition hover:bg-[#006241]/10 lg:hidden"
-              style={{ color: '#1E3932' }}
+              style={{ color: 'var(--client-house-green)' }}
             >
               {mobileOpen ? <X size={20} /> : <Menu size={20} />}
             </button>
@@ -907,18 +960,18 @@ export default function ClientLayout() {
       </main>
 
       {/* Footer */}
-      <footer style={{ background: '#1E3932' }} className="text-white">
+      <footer style={{ background: 'var(--client-house-green)' }} className="text-white">
         <div className="mx-auto max-w-7xl px-6 py-14">
           <div className="grid gap-10 md:grid-cols-2 lg:grid-cols-4">
             {/* Brand */}
             <div className="lg:col-span-1">
               <div className="flex items-center gap-2.5">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full" style={{ background: '#00754A' }}>
+                <div className="flex h-10 w-10 items-center justify-center rounded-full" style={{ background: 'var(--client-green-accent)' }}>
                   <Leaf size={20} className="text-white" />
                 </div>
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-white/50">
-                    Cultivated Ledger
+                    {brand.brandName}
                   </p>
                   <p className="text-sm font-black text-white">Vật Tư Nông Nghiệp</p>
                 </div>
@@ -988,7 +1041,7 @@ export default function ClientLayout() {
               <ul className="space-y-3 text-sm text-white/60">
                 <li className="flex items-start gap-2.5">
                   <Phone size={14} className="mt-0.5 shrink-0" />
-                  <span>1800 6863 (miễn phí)</span>
+                  <span>{brand.hotline}</span>
                 </li>
                 <li className="flex items-start gap-2.5">
                   <Mail size={14} className="mt-0.5 shrink-0" />
@@ -1007,7 +1060,7 @@ export default function ClientLayout() {
           </div>
 
           <div className="mt-10 flex flex-col items-center justify-between gap-4 border-t border-white/8 pt-8 text-xs text-white/30 sm:flex-row">
-            <p>© 2025 Cultivated Ledger. Bảo lưu mọi quyền.</p>
+            <p>{brand.footerText}</p>
             <div className="flex gap-6">
               <a href="#" className="transition hover:text-white/60">Chính sách bảo mật</a>
               <a href="#" className="transition hover:text-white/60">Điều khoản sử dụng</a>
