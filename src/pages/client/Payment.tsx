@@ -141,16 +141,22 @@ export default function Payment() {
   const { cart } = useCart();
   const state = (location.state as LocationState) || {};
 
-  const [method, setMethod] = useState<PaymentMethodKey>('cod');
+  const [method, setMethod] = useState<PaymentMethodKey | 'credit'>('cod');
   const [placing, setPlacing] = useState(false);
   const [loadingSettings, setLoadingSettings] = useState(true);
   const [paymentSettings, setPaymentSettings] = useState<PublicPaymentSettings>(
     DEFAULT_PUBLIC_PAYMENT_SETTINGS,
   );
+  const [creditLimit, setCreditLimit] = useState<{
+    creditLimit: number;
+    currentDebt: number;
+    availableCredit: number;
+    isActive: boolean;
+  } | null>(null);
   const [success, setSuccess] = useState<{
     orderId: string;
     totalPayment: string;
-    paymentMethod: PaymentMethodKey;
+    paymentMethod: PaymentMethodKey | 'credit';
     isBackorder?: boolean;
     isGuest?: boolean;
   } | null>(null);
@@ -189,19 +195,37 @@ export default function Payment() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!session) return;
+    let cancelledCredit = false;
+    void clientApi
+      .get<{ creditLimit: number; currentDebt: number; availableCredit: number; isActive: boolean } | null>(
+        '/credit-limits/my-limit',
+      )
+      .then((data) => {
+        if (!cancelledCredit) setCreditLimit(data);
+      })
+      .catch(() => {
+        if (!cancelledCredit) setCreditLimit(null);
+      });
+    return () => {
+      cancelledCredit = true;
+    };
+  }, [session]);
+
   const availableMethods = PAYMENT_METHODS.filter(
     (paymentMethod) => paymentSettings[paymentMethod.id]?.isActive,
   );
 
-  useEffect(() => {
-    if (!availableMethods.length) {
-      return;
-    }
+  const isCreditAvailable = !!session && creditLimit !== null && creditLimit.isActive;
 
+  useEffect(() => {
+    if (!availableMethods.length && !isCreditAvailable) return;
+    if (method === 'credit') return;
     if (!availableMethods.some((paymentMethod) => paymentMethod.id === method)) {
-      setMethod(availableMethods[0].id);
+      if (availableMethods.length > 0) setMethod(availableMethods[0].id);
     }
-  }, [availableMethods, method]);
+  }, [availableMethods, isCreditAvailable, method]);
 
   useEffect(() => {
     if (simulateOpen) {
@@ -453,6 +477,13 @@ export default function Payment() {
               </div>
             )}
 
+            {success.paymentMethod === 'credit' && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                <p className="font-bold">Đơn hàng mua nợ đã được ghi nhận.</p>
+                <p className="mt-1">Vui lòng thanh toán công nợ theo thỏa thuận với cửa hàng.</p>
+              </div>
+            )}
+
             <p className="mt-3 text-xs text-gray-400">
               Đơn hàng sẽ được giao trong 2-4 ngày làm việc. Bạn có thể theo dõi
               trong mục đơn hàng.
@@ -615,7 +646,7 @@ export default function Payment() {
                 <div className="flex justify-center rounded-2xl bg-white py-12">
                   <LoaderCircle size={22} className="animate-spin text-[#006241]" />
                 </div>
-              ) : availableMethods.length === 0 ? (
+              ) : availableMethods.length === 0 && !isCreditAvailable ? (
                 <div className="rounded-2xl bg-white p-5 text-sm text-gray-500">
                   Hiện tại admin đã tắt tất cả phương thức thanh toán. Vui lòng
                   liên hệ cửa hàng để được hỗ trợ.
@@ -657,6 +688,44 @@ export default function Payment() {
                       </div>
                     </button>
                   ))}
+
+                  {isCreditAvailable && creditLimit && (
+                    <button
+                      onClick={() => setMethod('credit')}
+                      className={`flex w-full items-start gap-4 rounded-2xl border-2 p-4 text-left transition ${
+                        method === 'credit'
+                          ? 'border-[#006241] bg-[#006241]/5'
+                          : 'border-transparent bg-white hover:border-[#006241]/20'
+                      }`}
+                    >
+                      <span className="mt-0.5 text-2xl">📋</span>
+                      <div className="flex-1">
+                        <p className="font-bold text-[#1E3932]">Mua nợ (Công nợ khách sỉ)</p>
+                        <p className="mt-0.5 text-xs text-gray-500">
+                          Nhận hàng trước, thanh toán sau theo thỏa thuận với cửa hàng.
+                        </p>
+                        <p className="mt-1 text-xs font-semibold text-amber-600">
+                          Hạn mức còn lại: {formatPrice(creditLimit.availableCredit)} / {formatPrice(creditLimit.creditLimit)}
+                        </p>
+                        {total > creditLimit.availableCredit && (
+                          <p className="mt-0.5 text-xs font-bold text-red-500">
+                            Không đủ hạn mức cho đơn hàng này!
+                          </p>
+                        )}
+                      </div>
+                      <div
+                        className={`mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition ${
+                          method === 'credit'
+                            ? 'border-[#006241] bg-[#006241]'
+                            : 'border-gray-300'
+                        }`}
+                      >
+                        {method === 'credit' && (
+                          <div className="h-2 w-2 rounded-full bg-white" />
+                        )}
+                      </div>
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -718,7 +787,12 @@ export default function Payment() {
                 </Link>
                 <button
                   onClick={() => void handlePlaceOrder()}
-                  disabled={placing || loadingSettings || !availableMethods.length}
+                  disabled={
+                    placing ||
+                    loadingSettings ||
+                    (!availableMethods.length && !isCreditAvailable) ||
+                    (method === 'credit' && creditLimit !== null && total > creditLimit.availableCredit)
+                  }
                   className="flex flex-1 items-center justify-center gap-2 rounded-full py-3 text-sm font-bold text-white disabled:opacity-60 active:scale-95"
                   style={{ background: '#00754A' }}
                 >

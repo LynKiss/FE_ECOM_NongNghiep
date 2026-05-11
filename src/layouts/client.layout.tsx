@@ -124,9 +124,13 @@ export default function ClientLayout() {
 
   useEffect(() => {
     if (!session) return;
-    void clientApi.get<Notification[]>('/notifications/me')
-      .then((data) => setNotifications(data.filter((n) => n.channel === 'SYSTEM')))
-      .catch(() => { });
+    const fetchNotifs = () =>
+      void clientApi.get<Notification[]>('/notifications/me')
+        .then((data) => setNotifications(data.filter((n) => n.channel === 'SYSTEM')))
+        .catch(() => { });
+    fetchNotifs();
+    const interval = setInterval(fetchNotifs, 60_000);
+    return () => clearInterval(interval);
   }, [session]);
 
   useEffect(() => {

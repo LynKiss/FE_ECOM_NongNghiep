@@ -134,6 +134,7 @@ export default function OrderDetail() {
   const [loading, setLoading] = useState(true);
   const [tracking, setTracking] = useState<OrderTracking | null>(null);
   const [trackingLoading, setTrackingLoading] = useState(false);
+  const [confirmingReceived, setConfirmingReceived] = useState(false);
   const momoVerifiedRef = useRef(false);
 
   const shouldShowTracking = order?.status === 'shipping' || order?.status === 'delivered';
@@ -261,6 +262,20 @@ export default function OrderDetail() {
       if (intervalId) clearInterval(intervalId);
     };
   }, [id, shouldShowTracking]);
+
+  const confirmReceived = async () => {
+    if (!order || !id) return;
+    if (!window.confirm('Xác nhận bạn đã nhận được hàng?')) return;
+    setConfirmingReceived(true);
+    try {
+      await clientApi.patch(`/orders/${id}/confirm-received`);
+      await refreshOrder(id, false);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Không thể xác nhận. Vui lòng thử lại.');
+    } finally {
+      setConfirmingReceived(false);
+    }
+  };
 
   const statusInfo = useMemo(() => {
     if (!order) return STATUS_CONFIG.pending;
@@ -545,6 +560,22 @@ export default function OrderDetail() {
             ) : null}
 
             <div className="space-y-2">
+              {order.status === 'shipping' ? (
+                <button
+                  type="button"
+                  onClick={() => void confirmReceived()}
+                  disabled={confirmingReceived}
+                  className="flex w-full items-center justify-center gap-2 rounded-full py-2.5 text-sm font-black text-white transition active:scale-95 disabled:opacity-60"
+                  style={{ background: '#15803d' }}
+                >
+                  {confirmingReceived ? (
+                    <LoaderCircle size={15} className="animate-spin" />
+                  ) : (
+                    <CheckCircle2 size={15} />
+                  )}
+                  Đã nhận được hàng
+                </button>
+              ) : null}
               {order.status === 'pending' ? (
                 <button
                   onClick={async () => {

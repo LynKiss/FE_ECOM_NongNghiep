@@ -60,6 +60,7 @@ type Customer = {
     name: UserRole;
   };
   isActive: boolean;
+  isWholesale?: boolean;
   createdAt: string;
   updatedAt?: string;
 };
@@ -88,6 +89,7 @@ type CustomerFormState = {
   avatarUrl: string;
   role: UserRole;
   isActive: boolean;
+  isWholesale: boolean;
 };
 
 type CustomerFormErrors = Partial<Record<keyof CustomerFormState, string>>;
@@ -99,6 +101,7 @@ const defaultFormState: CustomerFormState = {
   avatarUrl: '',
   role: 'customer',
   isActive: true,
+  isWholesale: false,
 };
 
 const DEFAULT_AVATAR_THEME: AvatarThemeId = 'forest';
@@ -603,6 +606,7 @@ export default function Customers() {
       avatarUrl: customer.avatarUrl ?? '',
       role: customer.role._id,
       isActive: Boolean(customer.isActive),
+      isWholesale: Boolean(customer.isWholesale),
     });
     setSelectedAvatarTheme(parseGeneratedAvatarTheme(customer.avatarUrl) ?? null);
     setAvatarFile(null);
@@ -677,6 +681,7 @@ export default function Customers() {
       ),
       role: formState.role,
       isActive: formState.isActive,
+      isWholesale: formState.isWholesale,
     };
 
     try {
@@ -1011,9 +1016,16 @@ export default function Customers() {
                       {customer.email}
                     </td>
                     <td className="px-8 py-6">
-                      <span className="rounded-lg border border-primary/5 bg-primary/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-primary">
-                        {translateRole(customer.role.name, isVietnamese)}
-                      </span>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded-lg border border-primary/5 bg-primary/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-primary">
+                          {translateRole(customer.role.name, isVietnamese)}
+                        </span>
+                        {customer.isWholesale && (
+                          <span className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] font-black uppercase tracking-widest text-amber-700">
+                            Khách sỉ
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-8 py-6">
                       <StatusBadge isActive={customer.isActive} isVietnamese={isVietnamese} />
@@ -1413,6 +1425,30 @@ export default function Customers() {
               </div>
             </label>
           </div>
+
+          <label className="grid gap-2">
+            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-on-surface-variant/50">
+              {isVietnamese ? 'Loại khách hàng' : 'Customer type'}
+            </span>
+            <div className="flex h-full items-center rounded-2xl border border-on-surface/10 bg-surface px-4 py-3 text-sm">
+              <input
+                type="checkbox"
+                checked={formState.isWholesale}
+                onChange={(event) =>
+                  setFormState((current) => ({
+                    ...current,
+                    isWholesale: event.target.checked,
+                  }))
+                }
+                className="mr-3 h-4 w-4 accent-amber-500"
+              />
+              <span className={formState.isWholesale ? 'font-bold text-amber-700' : 'text-on-surface-variant'}>
+                {formState.isWholesale
+                  ? isVietnamese ? 'Khách sỉ (được mua nợ)' : 'Wholesale customer (credit allowed)'
+                  : isVietnamese ? 'Khách lẻ thông thường' : 'Regular retail customer'}
+              </span>
+            </div>
+          </label>
         </div>
       </Modal>
 

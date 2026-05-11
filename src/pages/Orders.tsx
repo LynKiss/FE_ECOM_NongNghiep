@@ -120,7 +120,7 @@ const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   backordered: ['pending', 'cancelled'],
   pending: ['confirmed', 'cancelled'],
   confirmed: ['processing', 'cancelled'],
-  processing: ['shipping', 'cancelled'],
+  processing: ['shipping', 'delivered', 'cancelled'],
   shipping: ['delivered', 'partial_delivered', 'returned'],
   partial_delivered: ['returned'],
   delivered: ['returned'],
@@ -198,6 +198,7 @@ export default function Orders() {
   const [nextStatus, setNextStatus] = useState<OrderStatus>('pending');
   const [statusNote, setStatusNote] = useState('');
   const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [confirmingPayment, setConfirmingPayment] = useState(false);
 
   const [stats, setStats] = useState<OrderStats>({});
 
@@ -458,6 +459,25 @@ export default function Orders() {
       });
     } finally {
       setUpdatingStatus(false);
+    }
+  }
+
+  async function handleConfirmPayment() {
+    if (!selectedOrder) return;
+    setConfirmingPayment(true);
+    try {
+      const updated = await apiClient.patch<OrderDetail>(`/orders/${selectedOrder.id}/payment/confirm`);
+      setSelectedOrder(updated);
+      setOrders((current) =>
+        current.map((o) =>
+          o.id === updated.id ? { ...o, paymentStatus: updated.paymentStatus } : o,
+        ),
+      );
+      showToast({ tone: 'success', title: isVietnamese ? 'Đã xác nhận thanh toán' : 'Payment confirmed' });
+    } catch (err) {
+      showToast({ tone: 'error', title: isVietnamese ? 'Xác nhận thất bại' : 'Failed', description: err instanceof Error ? err.message : '' });
+    } finally {
+      setConfirmingPayment(false);
     }
   }
 
@@ -834,6 +854,22 @@ export default function Orders() {
               >
                 🖨 {isVietnamese ? 'In hóa đơn' : 'Print invoice'}
               </a>
+
+              {['delivered', 'partial_delivered'].includes(selectedOrder.status) &&
+                selectedOrder.paymentStatus === 'unpaid' &&
+                selectedOrder.paymentMethod !== 'cod' && (
+                  <button
+                    type="button"
+                    onClick={() => void handleConfirmPayment()}
+                    disabled={confirmingPayment}
+                    className="admin-pill px-4 py-2.5 text-sm font-black disabled:opacity-60"
+                    style={{ background: '#059669', color: '#fff' }}
+                  >
+                    {confirmingPayment
+                      ? (isVietnamese ? 'Đang xác nhận...' : 'Confirming...')
+                      : (isVietnamese ? '✓ Xác nhận đã thanh toán' : '✓ Confirm payment')}
+                  </button>
+                )}
 
               {activeTab === 'detail' && (
                 <div className="flex flex-wrap items-center gap-3">
