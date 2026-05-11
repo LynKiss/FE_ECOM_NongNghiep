@@ -45,6 +45,7 @@ type Notification = {
   title: string;
   message: string;
   channel: string;
+  isRead: boolean;
   metadata: { orderId?: string; type?: string } | null;
   createdAt: string | null;
 };
@@ -126,7 +127,7 @@ export default function ClientLayout() {
     if (!session) return;
     const fetchNotifs = () =>
       void clientApi.get<Notification[]>('/notifications/me')
-        .then((data) => setNotifications(data.filter((n) => n.channel === 'SYSTEM')))
+        .then((data) => setNotifications(data.filter((n) => n.channel === 'system')))
         .catch(() => { });
     fetchNotifs();
     const interval = setInterval(fetchNotifs, 60_000);
@@ -609,14 +610,21 @@ export default function ClientLayout() {
             {session && (
               <div ref={notifRef} className="relative">
                 <button
-                  onClick={() => setNotifOpen(!notifOpen)}
+                  onClick={() => {
+                    const opening = !notifOpen;
+                    setNotifOpen(opening);
+                    if (opening && notifications.some((n) => !n.isRead)) {
+                      void clientApi.patch('/notifications/me/read', {}).catch(() => {});
+                      setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+                    }
+                  }}
                   className="relative flex h-9 w-9 items-center justify-center rounded-full transition hover:bg-[#006241]/10"
                   style={{ color: '#1E3932' }}
                 >
                   <Bell size={18} />
-                  {notifications.length > 0 && (
+                  {notifications.filter((n) => !n.isRead).length > 0 && (
                     <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-black text-white">
-                      {notifications.length > 9 ? '9+' : notifications.length}
+                      {notifications.filter((n) => !n.isRead).length > 9 ? '9+' : notifications.filter((n) => !n.isRead).length}
                     </span>
                   )}
                 </button>
@@ -635,15 +643,20 @@ export default function ClientLayout() {
                         notifications.slice(0, 20).map((n, idx) => {
                           const orderId = n.metadata?.orderId;
                           const inner = (
-                            <>
-                              <p className="text-xs font-semibold text-[#1E3932]">{n.title}</p>
-                              <p className="mt-0.5 text-xs text-gray-500 line-clamp-2">{n.message}</p>
-                              {n.createdAt && (
-                                <p className="mt-1 text-[10px] text-gray-400">
-                                  {new Date(n.createdAt).toLocaleDateString('vi-VN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                                </p>
+                            <div className="flex items-start gap-2.5">
+                              {!n.isRead && (
+                                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#006241]" />
                               )}
-                            </>
+                              <div className={n.isRead ? 'pl-4' : ''}>
+                                <p className="text-xs font-semibold text-[#1E3932]">{n.title}</p>
+                                <p className="mt-0.5 text-xs text-gray-500 line-clamp-2">{n.message}</p>
+                                {n.createdAt && (
+                                  <p className="mt-1 text-[10px] text-gray-400">
+                                    {new Date(n.createdAt).toLocaleDateString('vi-VN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
                           );
                           const cls = 'block w-full border-b border-black/5 px-4 py-3 last:border-0 text-left';
                           return orderId ? (
