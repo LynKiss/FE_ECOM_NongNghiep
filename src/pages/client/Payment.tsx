@@ -168,6 +168,7 @@ export default function Payment() {
   const [simulateOpen, setSimulateOpen] = useState(false);
   const [simOrderId, setSimOrderId] = useState<string | null>(null);
   const [simRef, setSimRef] = useState<string | null>(null);
+  const [simIsGuest, setSimIsGuest] = useState(false);
   const [simCountdown, setSimCountdown] = useState(600);
   const [simConfirming, setSimConfirming] = useState(false);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -286,14 +287,14 @@ export default function Payment() {
         orderId: simOrderId,
         totalPayment: String(total),
         paymentMethod: method,
+        isGuest: simIsGuest,
       });
-    } catch {
-      setSimulateOpen(false);
-      setSuccess({
-        orderId: simOrderId,
-        totalPayment: String(total),
-        paymentMethod: method,
-      });
+    } catch (error) {
+      alert(
+        error instanceof Error
+          ? error.message
+          : 'Xac nhan thanh toan that bai. Vui long thu lai.',
+      );
     } finally {
       setSimConfirming(false);
     }
@@ -330,6 +331,39 @@ export default function Payment() {
           { 'X-Idempotency-Key': idempotencyKeyRef.current },
         );
         clearGuestCart();
+        const selectedMethod = PAYMENT_METHODS.find(
+          (paymentMethod) => paymentMethod.id === method,
+        );
+        if (selectedMethod?.online) {
+          try {
+            const returnUrl = `${window.location.origin}/client/payment`;
+            const paymentTransaction = await clientApi.post<{
+              transactionRef: string;
+              paymentUrl: string;
+            }>(`/payments/guest/orders/${order.id}/initiate`, {
+              returnUrl,
+              phone: state.guestShipping.phone,
+            });
+
+            if (
+              paymentTransaction.paymentUrl &&
+              !paymentTransaction.paymentUrl.includes('payment-gateway.local')
+            ) {
+              window.location.href = paymentTransaction.paymentUrl;
+              return;
+            }
+
+            setSimRef(paymentTransaction.transactionRef);
+          } catch {
+            setSimRef(`${order.id}-${Date.now()}`);
+          }
+
+          setSimOrderId(order.id);
+          setSimIsGuest(true);
+          setSimulateOpen(true);
+          return;
+        }
+
         setSuccess({ orderId: order.id, totalPayment: order.totalPayment, paymentMethod: method, isGuest: true });
         return;
       }
@@ -373,6 +407,7 @@ export default function Payment() {
         }
 
         setSimOrderId(order.id);
+        setSimIsGuest(false);
         setSimulateOpen(true);
       } else {
         setSuccess({
