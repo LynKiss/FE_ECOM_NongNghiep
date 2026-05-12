@@ -6,6 +6,7 @@ export type RiceDisease = {
   diseaseKey: string;
   diseaseSlug: string;
   diseaseName: string;
+  diseaseNameVi?: string | null;
   summary: string | null;
   symptoms: string | null;
   causes: string | null;
@@ -78,6 +79,7 @@ export type RiceDiagnosisResult = {
     confidence: number;
     diseaseId: string | null;
     diseaseName: string;
+    diseaseNameVi?: string | null;
     diseaseSlug: string | null;
   }>;
   recommendedProducts: RiceDiagnosisProduct[];

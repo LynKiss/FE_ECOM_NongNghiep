@@ -449,7 +449,9 @@ export default function Products() {
         subcategoryId: formState.subcategoryId || undefined,
         originId: formState.originId || undefined,
         productPrice: formState.productPrice.trim(),
-        productPriceSale: formState.productPriceSale.trim() || undefined,
+        productPriceSale: formState.productPriceSale.trim() && Number(formState.productPriceSale) > 0
+          ? formState.productPriceSale.trim()
+          : null,
         quantityAvailable: Number(formState.quantityAvailable || '0'),
         quantityPerBox: formState.quantityPerBox.trim() ? Number(formState.quantityPerBox) : undefined,
         unit: formState.unit.trim() || undefined,

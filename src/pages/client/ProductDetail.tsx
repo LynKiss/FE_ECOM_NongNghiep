@@ -23,6 +23,7 @@ import { clientApi } from '../../lib/client-api';
 import { useCart } from '../../hooks/useCart';
 import { useClientSession } from '../../hooks/useClientSession';
 import { useToast } from '../../hooks/useToast';
+import CollapsibleHtml from '../../components/shared/CollapsibleHtml';
 
 type ProductImage = { imageId: string; imageUrl: string; isPrimary: boolean; sortOrder: number };
 
@@ -444,7 +445,7 @@ export default function ProductDetail() {
   const currentImage = sortedImages[selectedImage]?.imageUrl;
   const displayPrice = Number(product.effectivePrice);
   const originalPrice = Number(product.basePrice);
-  const hasDiscount = product.appliedDiscount !== null && displayPrice < originalPrice;
+  const hasDiscount = displayPrice < originalPrice - 0.01;
   const savings = hasDiscount ? originalPrice - displayPrice : 0;
   const avgRating = Number(product.ratingAverage) || 0;
   const visibleReviews = (() => {
@@ -778,9 +779,9 @@ export default function ProductDetail() {
             {/* Description */}
             {activeTab === 'desc' && (
               product.description ? (
-                <div
-                  className="prose max-w-none text-sm text-gray-600"
-                  dangerouslySetInnerHTML={{ __html: product.description }}
+                <CollapsibleHtml
+                  html={product.description}
+                  contentClassName="prose max-w-none text-sm text-gray-600"
                 />
               ) : (
                 <p className="text-sm italic text-gray-400">Chưa có mô tả cho sản phẩm này.</p>

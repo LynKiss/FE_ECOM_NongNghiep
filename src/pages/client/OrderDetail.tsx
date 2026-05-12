@@ -12,12 +12,16 @@ import {
   Navigation,
   Package,
   RefreshCw,
+  RotateCcw,
+  ShoppingCart,
   Star,
   Truck,
   XCircle,
 } from 'lucide-react';
 import { clientApi } from '../../lib/client-api';
 import { useClientSession } from '../../hooks/useClientSession';
+import { useCart } from '../../hooks/useCart';
+import { useToast } from '../../hooks/useToast';
 import {
   TRACKING_MODE_LABELS,
   TRACKING_SOURCE_LABELS,
@@ -135,10 +139,52 @@ export default function OrderDetail() {
   const [tracking, setTracking] = useState<OrderTracking | null>(null);
   const [trackingLoading, setTrackingLoading] = useState(false);
   const [confirmingReceived, setConfirmingReceived] = useState(false);
+  const [reordering, setReordering] = useState(false);
+  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const momoVerifiedRef = useRef(false);
+
+  const { addItem } = useCart();
+  const { showToast } = useToast();
 
   const shouldShowTracking = order?.status === 'shipping' || order?.status === 'delivered';
   const activeMapPoint = tracking?.activeLocation ?? tracking?.manualLocation ?? tracking?.gpsLocation ?? null;
+
+  const handleReorder = async () => {
+    if (!order?.items?.length || selectedItems.size === 0) return;
+    setReordering(true);
+    const itemsToAdd = order.items.filter((i) => selectedItems.has(i.id));
+    let added = 0;
+    let skipped = 0;
+    try {
+      for (const item of itemsToAdd) {
+        try {
+          await addItem(item.productId, item.quantity);
+          added++;
+        } catch {
+          skipped++;
+        }
+      }
+      if (added > 0 && skipped === 0) {
+        showToast({ tone: 'success', title: 'Đã thêm vào giỏ hàng', description: `${added} sản phẩm đã được thêm.` });
+      } else if (added > 0 && skipped > 0) {
+        showToast({ tone: 'warning', title: 'Thêm một phần', description: `${added} sản phẩm đã thêm, ${skipped} không còn khả dụng.` });
+      } else {
+        showToast({ tone: 'error', title: 'Không thể thêm', description: 'Sản phẩm đã chọn hiện không còn bán.' });
+      }
+      if (added > 0) navigate('/client/cart');
+    } finally {
+      setReordering(false);
+    }
+  };
+
+  const toggleSelectItem = (itemId: string) => {
+    setSelectedItems((prev) => {
+      const next = new Set(prev);
+      if (next.has(itemId)) next.delete(itemId);
+      else next.add(itemId);
+      return next;
+    });
+  };
 
   const refreshOrder = async (orderId: string, silent = false) => {
     if (!silent) {
@@ -148,6 +194,10 @@ export default function OrderDetail() {
     try {
       const data = await clientApi.get<OrderDetailResponse>(`/users/me/orders/${orderId}`);
       setOrder(data);
+      const canReorder = data.status === 'delivered' || data.status === 'cancelled' || data.status === 'returned';
+      if (canReorder && data.items?.length) {
+        setSelectedItems(new Set(data.items.map((i) => i.id)));
+      }
     } catch {
       if (!silent) {
         void navigate('/client/orders');
@@ -463,22 +513,59 @@ export default function OrderDetail() {
             )}
 
             <div className="rounded-2xl bg-white p-5 shadow-sm">
-              <h3 className="mb-4 text-sm font-black uppercase tracking-wider text-gray-400">
-                Sản phẩm đã đặt
-              </h3>
-              <div className="space-y-4">
-                {order.items.map((item) => (
-                  <div key={item.id} className="flex items-start gap-4">
+              <div className="mb-4 flex items-center justify-between">
+                <h3 className="text-sm font-black uppercase tracking-wider text-gray-400">
+                  Sản phẩm đã đặt
+                </h3>
+                {(isCancelled || isDelivered) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const allIds = new Set(order.items.map((i) => i.id));
+                      const allSelected = order.items.every((i) => selectedItems.has(i.id));
+                      setSelectedItems(allSelected ? new Set() : allIds);
+                    }}
+                    className="text-xs font-semibold text-[#006241] hover:underline"
+                  >
+                    {order.items.every((i) => selectedItems.has(i.id)) ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
+                  </button>
+                )}
+              </div>
+              <div className="space-y-3">
+                {order.items.map((item) => {
+                  const isSelected = selectedItems.has(item.id);
+                  return (
+                  <div
+                    key={item.id}
+                    className={`flex items-center gap-3 rounded-xl p-2.5 transition ${
+                      (isCancelled || isDelivered)
+                        ? isSelected
+                          ? 'bg-[#006241]/5 ring-1 ring-[#006241]/20'
+                          : 'cursor-pointer hover:bg-gray-50'
+                        : ''
+                    }`}
+                    onClick={() => (isCancelled || isDelivered) && toggleSelectItem(item.id)}
+                  >
+                    {(isCancelled || isDelivered) && (
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleSelectItem(item.id)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="h-4 w-4 shrink-0 cursor-pointer accent-[#006241]"
+                      />
+                    )}
                     <div
-                      className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl"
+                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl"
                       style={{ background: '#d4e9e2' }}
                     >
-                      <Leaf size={20} style={{ color: '#006241' }} />
+                      <Leaf size={18} style={{ color: '#006241' }} />
                     </div>
                     <div className="min-w-0 flex-1">
                       <Link
                         to={`/client/products/${item.productId}`}
                         className="line-clamp-2 text-sm font-semibold text-[#1E3932] hover:text-[#006241]"
+                        onClick={(e) => e.stopPropagation()}
                       >
                         {item.productName}
                       </Link>
@@ -493,12 +580,14 @@ export default function OrderDetail() {
                       <Link
                         to={`/client/products/${item.productId}#reviews`}
                         className="shrink-0 flex items-center gap-1 rounded-full border border-[#006241]/20 px-2.5 py-1 text-[11px] font-semibold text-[#006241] transition hover:bg-[#006241]/10"
+                        onClick={(e) => e.stopPropagation()}
                       >
                         <Star size={10} /> Đánh giá
                       </Link>
                     ) : null}
                   </div>
-                ))}
+                  );
+                })}
               </div>
 
               <div className="mt-5 space-y-2 border-t border-black/5 pt-4 text-sm">
@@ -598,6 +687,24 @@ export default function OrderDetail() {
                   Hủy đơn hàng
                 </button>
               ) : null}
+              {(isCancelled || isDelivered) && (
+                <button
+                  type="button"
+                  onClick={() => void handleReorder()}
+                  disabled={reordering || selectedItems.size === 0}
+                  className="flex w-full items-center justify-center gap-2 rounded-full py-2.5 text-sm font-black text-white transition active:scale-95 disabled:opacity-50"
+                  style={{ background: selectedItems.size > 0 ? '#006241' : '#9ca3af' }}
+                >
+                  {reordering ? (
+                    <LoaderCircle size={15} className="animate-spin" />
+                  ) : (
+                    <RotateCcw size={15} />
+                  )}
+                  {selectedItems.size > 0
+                    ? `Mua lại (${selectedItems.size})`
+                    : 'Chọn sản phẩm để mua lại'}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => {

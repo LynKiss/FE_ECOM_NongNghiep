@@ -1023,6 +1023,7 @@ function GrTab({
                                   unit: item.unit,
                                   unitPerBase: item.unitPerBase,
                                   qtyOrdered: item.qtyOrdered,
+                                  qtyReceived: item.qtyOrdered,
                                   unitPrice: Number(item.unitPrice),
                                 })),
                               );
@@ -1064,8 +1065,14 @@ function GrTab({
                   </button>
                 </div>
                 <div className="space-y-3">
-                  {lines.map((line, idx) => {
-                    const prev = preview.find((p) => p.productId === line.productId);
+                  {(() => {
+                    const validLineIndices = lines.reduce<number[]>((acc, l, i) => {
+                      if (l.productId && l.qtyReceived > 0 && l.unitPrice > 0) acc.push(i);
+                      return acc;
+                    }, []);
+                    return lines.map((line, idx) => {
+                    const validIdx = validLineIndices.indexOf(idx);
+                    const prev = validIdx >= 0 ? preview[validIdx] : undefined;
                     return (
                       <div key={idx} className="rounded-xl border border-on-surface/8 bg-surface/50 p-4 space-y-3">
                         <div className="grid gap-2 sm:grid-cols-[1fr_1fr_80px_80px]">
@@ -1137,7 +1144,8 @@ function GrTab({
                         </div>
                       </div>
                     );
-                  })}
+                  });
+                  })()}
                 </div>
               </div>
 

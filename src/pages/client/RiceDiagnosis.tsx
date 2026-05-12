@@ -464,7 +464,9 @@ export default function RiceDiagnosis() {
                   Kết quả AI
                 </p>
                 <h2 className="mt-2 text-3xl font-black text-[#1E3932]">
-                  {result.disease?.diseaseName ?? 'Chưa đối chiếu được với danh mục bệnh'}
+                  {result.disease
+                    ? (result.disease.diseaseNameVi || result.disease.diseaseName)
+                    : 'Chưa đối chiếu được với danh mục bệnh'}
                 </h2>
                 <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-500">
                   {result.advisory.headline}
@@ -661,7 +663,7 @@ export default function RiceDiagnosis() {
                       <div key={`${prediction.normalizedKey}-${prediction.label}`}>
                         <div className="mb-1 flex items-center justify-between gap-3 text-sm">
                           <span className="font-semibold text-[#1E3932]">
-                            {prediction.diseaseName}
+                            {prediction.diseaseNameVi || prediction.diseaseName}
                           </span>
                           <span className="font-black text-[#006241]">
                             {formatConfidence(prediction.confidence)}
@@ -786,7 +788,7 @@ export default function RiceDiagnosis() {
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <p className="text-lg font-black text-[#1E3932]">
-                            {disease.diseaseName}
+                            {disease.diseaseNameVi || disease.diseaseName}
                           </p>
                           <p className="mt-2 text-sm leading-6 text-gray-500">
                             {disease.summary || 'Đang cập nhật mô tả cho bệnh này.'}
@@ -856,7 +858,9 @@ export default function RiceDiagnosis() {
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div>
                         <p className="font-black text-[#1E3932]">
-                          {item.disease?.diseaseName ?? item.predictedLabel ?? 'Không rõ'}
+                          {item.disease
+                            ? (item.disease.diseaseNameVi || item.disease.diseaseName)
+                            : (item.predictedLabel ?? 'Không rõ')}
                         </p>
                         <p className="mt-1 text-sm text-gray-500">
                           {new Date(item.createdAt).toLocaleString('vi-VN')}

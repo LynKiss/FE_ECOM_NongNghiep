@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react';
+import { type MouseEvent, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Package, ChevronRight, Leaf, ChevronLeft } from 'lucide-react';
+import { Package, ChevronRight, Leaf, ChevronLeft, RotateCcw, LoaderCircle } from 'lucide-react';
 import { clientApi } from '../../lib/client-api';
 import { useClientSession } from '../../hooks/useClientSession';
+import { useCart } from '../../hooks/useCart';
+import { useToast } from '../../hooks/useToast';
 
 type Order = {
   id: string;
@@ -59,10 +61,40 @@ const LIMIT = 10;
 export default function OrderHistory() {
   const navigate = useNavigate();
   const { session } = useClientSession();
+  const { addItem } = useCart();
+  const { showToast } = useToast();
   const [data, setData] = useState<OrdersResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>('all');
   const [page, setPage] = useState(1);
+  const [reorderingId, setReorderingId] = useState<string | null>(null);
+
+  const handleReorder = async (orderId: string, e: MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setReorderingId(orderId);
+    try {
+      const order = await clientApi.get<{ items: { productId: string; quantity: number }[] }>(`/orders/${orderId}`);
+      const items = order.items ?? [];
+      let added = 0; let skipped = 0;
+      for (const item of items) {
+        try { await addItem(item.productId, item.quantity); added++; }
+        catch { skipped++; }
+      }
+      if (added > 0 && skipped === 0) {
+        showToast({ tone: 'success', title: 'Đã thêm vào giỏ hàng', description: `${added} sản phẩm đã được thêm.` });
+      } else if (added > 0) {
+        showToast({ tone: 'warning', title: 'Thêm một phần', description: `${added} thêm thành công, ${skipped} không còn khả dụng.` });
+      } else {
+        showToast({ tone: 'error', title: 'Không thể thêm', description: 'Sản phẩm trong đơn này hiện không còn bán.' });
+      }
+      if (added > 0) void navigate('/client/cart');
+    } catch {
+      showToast({ tone: 'error', title: 'Lỗi', description: 'Không thể lấy thông tin đơn hàng.' });
+    } finally {
+      setReorderingId(null);
+    }
+  };
 
   const loadOrders = (pg: number, status: string) => {
     setLoading(true);
@@ -165,51 +197,73 @@ export default function OrderHistory() {
               {orders.map((order) => {
                 const statusInfo = STATUS_LABELS[order.status] ?? { label: order.status, color: '#374151', bg: '#f3f4f6' };
                 const shortId = order.id.slice(-8).toUpperCase();
+                const canReorder = order.status === 'delivered' || order.status === 'cancelled' || order.status === 'returned';
+                const isReordering = reorderingId === order.id;
                 return (
-                  <Link
+                  <div
                     key={order.id}
-                    to={`/client/orders/${order.id}`}
-                    className="client-card block overflow-hidden transition-all"
+                    className="client-card overflow-hidden transition-all"
                   >
-                    <div className="flex items-center justify-between border-b border-black/5 p-4">
-                      <div className="flex items-center gap-3">
-                        <div
-                          className="flex h-10 w-10 items-center justify-center rounded-full"
-                          style={{ background: statusInfo.bg }}
+                    <div
+                      className="cursor-pointer"
+                      onClick={() => void navigate(`/client/orders/${order.id}`)}
+                    >
+                      <div className="flex items-center justify-between border-b border-black/5 p-4">
+                        <div className="flex items-center gap-3">
+                          <div
+                            className="flex h-10 w-10 items-center justify-center rounded-full"
+                            style={{ background: statusInfo.bg }}
+                          >
+                            <Package size={18} style={{ color: statusInfo.color }} />
+                          </div>
+                          <div>
+                            <p className="font-black text-[#1E3932]">Đơn #{shortId}</p>
+                            <p className="text-xs text-gray-400">{formatDate(order.createdAt)}</p>
+                          </div>
+                        </div>
+                        <span
+                          className="rounded-full px-3 py-1 text-[11px] font-black"
+                          style={{ background: statusInfo.bg, color: statusInfo.color }}
                         >
-                          <Package size={18} style={{ color: statusInfo.color }} />
-                        </div>
-                        <div>
-                          <p className="font-black text-[#1E3932]">Đơn #{shortId}</p>
-                          <p className="text-xs text-gray-400">{formatDate(order.createdAt)}</p>
-                        </div>
+                          {statusInfo.label}
+                        </span>
                       </div>
-                      <span
-                        className="rounded-full px-3 py-1 text-[11px] font-black"
-                        style={{ background: statusInfo.bg, color: statusInfo.color }}
-                      >
-                        {statusInfo.label}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between p-4">
-                      <div className="text-sm text-gray-500">
-                        <p>
-                          Thanh toán:{' '}
-                          <span className="font-semibold text-[#1E3932]">
-                            {PAYMENT_LABELS[order.paymentMethod] ?? order.paymentMethod}
-                          </span>
-                        </p>
-                        <p className="mt-0.5 line-clamp-1 max-w-xs text-xs">{order.address}</p>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <div className="text-right">
-                          <p className="font-black text-[#006241]">{formatPrice(order.totalPayment)}</p>
-                          <p className="text-xs text-gray-400">{order.totalQuantity} sản phẩm</p>
+                      <div className="flex items-center justify-between p-4">
+                        <div className="text-sm text-gray-500">
+                          <p>
+                            Thanh toán:{' '}
+                            <span className="font-semibold text-[#1E3932]">
+                              {PAYMENT_LABELS[order.paymentMethod] ?? order.paymentMethod}
+                            </span>
+                          </p>
+                          <p className="mt-0.5 line-clamp-1 max-w-xs text-xs">{order.address}</p>
                         </div>
-                        <ChevronRight size={16} className="text-gray-300" />
+                        <div className="flex items-center gap-3">
+                          <div className="text-right">
+                            <p className="font-black text-[#006241]">{formatPrice(order.totalPayment)}</p>
+                            <p className="text-xs text-gray-400">{order.totalQuantity} sản phẩm</p>
+                          </div>
+                          <ChevronRight size={16} className="text-gray-300" />
+                        </div>
                       </div>
                     </div>
-                  </Link>
+                    {canReorder && (
+                      <div className="border-t border-black/5 px-4 py-2.5">
+                        <button
+                          type="button"
+                          onClick={(e) => void handleReorder(order.id, e)}
+                          disabled={isReordering}
+                          className="flex items-center gap-1.5 rounded-full border border-[#006241]/30 px-4 py-1.5 text-xs font-bold text-[#006241] transition hover:bg-[#006241] hover:text-white disabled:opacity-50"
+                        >
+                          {isReordering
+                            ? <LoaderCircle size={12} className="animate-spin" />
+                            : <RotateCcw size={12} />
+                          }
+                          Mua lại
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </div>
