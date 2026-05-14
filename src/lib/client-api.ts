@@ -88,6 +88,30 @@ export async function registerClient(data: {
   return parseEnvelope<unknown>(response);
 }
 
+export async function requestClientPasswordResetOtp(email: string) {
+  const response = await fetch(`${API_BASE_URL}/auth/forgot-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+    credentials: 'include',
+  });
+  return parseEnvelope<{ message: string }>(response);
+}
+
+export async function resetClientPassword(data: {
+  email: string;
+  otp: string;
+  newPassword: string;
+}) {
+  const response = await fetch(`${API_BASE_URL}/auth/reset-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+    credentials: 'include',
+  });
+  return parseEnvelope<{ message: string }>(response);
+}
+
 export async function refreshClientSession() {
   const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
     method: 'GET',

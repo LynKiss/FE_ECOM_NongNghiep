@@ -61,6 +61,7 @@ const ClientNewsListPage = lazy(() => import('../features/client/news/page'));
 const ClientNewsDetailPage = lazy(() => import('../features/client/news-detail/page'));
 const ClientSupportPage = lazy(() => import('../pages/client/SupportLanding'));
 const ClientLoginPage = lazy(() => import('../features/client/login/page'));
+const ClientForgotPasswordPage = lazy(() => import('../features/client/forgot-password/page'));
 const ClientRegisterPage = lazy(() => import('../features/client/register/page'));
 const ClientAccountPage = lazy(() => import('../features/client/account/page'));
 const ClientOrdersPage = lazy(() => import('../features/client/orders/page'));
@@ -168,6 +169,7 @@ export const router = createBrowserRouter([
         ],
       },
       { path: 'client/login', element: clientSuspense(<ClientLoginPage />) },
+      { path: 'client/forgot-password', element: clientSuspense(<ClientForgotPasswordPage />) },
       { path: 'client/register', element: clientSuspense(<ClientRegisterPage />) },
       { path: 'login', element: withSuspense(<LoginPage />) },
       { path: 'super-admin/login', element: withSuspense(<SuperAdminLoginPage />) },

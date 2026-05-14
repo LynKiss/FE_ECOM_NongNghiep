@@ -158,9 +158,17 @@ export default function ClientLogin() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="block text-[11px] font-black uppercase tracking-[0.18em] text-[#4a6155]">
-                    Mật khẩu
-                  </label>
+                  <div className="flex items-center justify-between gap-3">
+                    <label className="block text-[11px] font-black uppercase tracking-[0.18em] text-[#4a6155]">
+                      Mật khẩu
+                    </label>
+                    <Link
+                      to="/client/forgot-password"
+                      className="text-xs font-black text-[#006241] hover:underline"
+                    >
+                      Quên mật khẩu?
+                    </Link>
+                  </div>
                   <div className="relative">
                     <input
                       type={showPassword ? 'text' : 'password'}
