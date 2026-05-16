@@ -269,6 +269,13 @@ export default function Sidebar({ open, onClose, collapsed, onToggleCollapse }: 
       permissions: ['manage_reports'],
     },
     {
+      id: 'agri-inventory',
+      label: isVietnamese ? 'Kho nông sản FIFO' : 'Agri FIFO Inventory',
+      icon: Leaf,
+      path: '/admin/agri-inventory',
+      permissions: ['manage_inventory'],
+    },
+    {
       id: 'profitability',
       label: isVietnamese ? 'Lợi nhuận thật' : 'Profitability',
       icon: TrendingUp,

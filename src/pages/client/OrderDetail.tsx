@@ -143,6 +143,16 @@ export default function OrderDetail() {
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const momoVerifiedRef = useRef(false);
 
+  // Return / Short-delivery modals
+  type ReturnReason = 'damaged' | 'wrong_item' | 'quality' | 'other';
+  const [returnModalOpen, setReturnModalOpen] = useState(false);
+  const [shortDeliveryModalOpen, setShortDeliveryModalOpen] = useState(false);
+  const [returnItemId, setReturnItemId] = useState<string>('');
+  const [returnReason, setReturnReason] = useState<ReturnReason>('damaged');
+  const [returnDescription, setReturnDescription] = useState('');
+  const [shortQuantities, setShortQuantities] = useState<Record<string, string>>({});
+  const [submittingReturn, setSubmittingReturn] = useState(false);
+
   const { addItem } = useCart();
   const { showToast } = useToast();
 
@@ -324,6 +334,78 @@ export default function OrderDetail() {
       alert(error instanceof Error ? error.message : 'Không thể xác nhận. Vui lòng thử lại.');
     } finally {
       setConfirmingReceived(false);
+    }
+  };
+
+  const openReturnModal = () => {
+    if (!order?.items?.length) return;
+    setReturnItemId(order.items[0].id);
+    setReturnReason('damaged');
+    setReturnDescription('');
+    setReturnModalOpen(true);
+  };
+
+  const submitReturnRequest = async () => {
+    if (!order || !returnItemId) return;
+    if (!returnDescription.trim()) {
+      showToast({ tone: 'error', title: 'Thiếu thông tin', description: 'Vui lòng mô tả chi tiết vấn đề.' });
+      return;
+    }
+    setSubmittingReturn(true);
+    try {
+      await clientApi.post('/returns', {
+        orderId: order.id,
+        orderItemId: returnItemId,
+        reason: returnReason,
+        description: returnDescription.trim(),
+      });
+      showToast({ tone: 'success', title: 'Đã gửi yêu cầu trả hàng', description: 'Chúng tôi sẽ liên hệ trong 24h.' });
+      setReturnModalOpen(false);
+      await refreshOrder(order.id, true);
+    } catch (error) {
+      showToast({ tone: 'error', title: 'Không gửi được', description: error instanceof Error ? error.message : '' });
+    } finally {
+      setSubmittingReturn(false);
+    }
+  };
+
+  const openShortDeliveryModal = () => {
+    if (!order?.items?.length) return;
+    const initial: Record<string, string> = {};
+    for (const it of order.items) initial[it.id] = String(it.quantity);
+    setShortQuantities(initial);
+    setShortDeliveryModalOpen(true);
+  };
+
+  const submitShortDelivery = async () => {
+    if (!order) return;
+    // Lọc các item nhận thiếu (qty thực nhận < qty đặt)
+    const shortItems = order.items
+      .map((it) => ({ item: it, actual: Number(shortQuantities[it.id] ?? it.quantity) }))
+      .filter((x) => x.actual >= 0 && x.actual < x.item.quantity);
+
+    if (shortItems.length === 0) {
+      showToast({ tone: 'error', title: 'Chưa khai báo thiếu', description: 'Hãy nhập số lượng thực nhận nhỏ hơn số đã đặt.' });
+      return;
+    }
+    setSubmittingReturn(true);
+    try {
+      for (const { item, actual } of shortItems) {
+        const missing = item.quantity - actual;
+        await clientApi.post('/returns', {
+          orderId: order.id,
+          orderItemId: item.id,
+          reason: 'short_delivery',
+          description: `Đã nhận ${actual}/${item.quantity}, thiếu ${missing} ${item.productName}.`,
+        });
+      }
+      showToast({ tone: 'success', title: 'Đã báo nhận thiếu', description: `${shortItems.length} sản phẩm — chờ admin xác nhận.` });
+      setShortDeliveryModalOpen(false);
+      await refreshOrder(order.id, true);
+    } catch (error) {
+      showToast({ tone: 'error', title: 'Không gửi được', description: error instanceof Error ? error.message : '' });
+    } finally {
+      setSubmittingReturn(false);
     }
   };
 
@@ -650,19 +732,39 @@ export default function OrderDetail() {
 
             <div className="space-y-2">
               {order.status === 'shipping' ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => void confirmReceived()}
+                    disabled={confirmingReceived}
+                    className="flex w-full items-center justify-center gap-2 rounded-full py-2.5 text-sm font-black text-white transition active:scale-95 disabled:opacity-60"
+                    style={{ background: '#15803d' }}
+                  >
+                    {confirmingReceived ? (
+                      <LoaderCircle size={15} className="animate-spin" />
+                    ) : (
+                      <CheckCircle2 size={15} />
+                    )}
+                    Đã nhận được hàng (đủ)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={openShortDeliveryModal}
+                    className="flex w-full items-center justify-center gap-2 rounded-full border border-amber-300 py-2.5 text-sm font-bold text-amber-700 transition hover:bg-amber-50 active:scale-95"
+                  >
+                    <AlertCircle size={15} />
+                    Báo nhận thiếu
+                  </button>
+                </>
+              ) : null}
+              {(order.status === 'delivered' || order.status === 'partial_delivered') ? (
                 <button
                   type="button"
-                  onClick={() => void confirmReceived()}
-                  disabled={confirmingReceived}
-                  className="flex w-full items-center justify-center gap-2 rounded-full py-2.5 text-sm font-black text-white transition active:scale-95 disabled:opacity-60"
-                  style={{ background: '#15803d' }}
+                  onClick={openReturnModal}
+                  className="flex w-full items-center justify-center gap-2 rounded-full border border-red-200 py-2.5 text-sm font-bold text-red-600 transition hover:bg-red-50 active:scale-95"
                 >
-                  {confirmingReceived ? (
-                    <LoaderCircle size={15} className="animate-spin" />
-                  ) : (
-                    <CheckCircle2 size={15} />
-                  )}
-                  Đã nhận được hàng
+                  <RotateCcw size={15} />
+                  Tạo yêu cầu trả hàng
                 </button>
               ) : null}
               {order.status === 'pending' ? (
@@ -727,6 +829,101 @@ export default function OrderDetail() {
           </div>
         </div>
       </div>
+
+      {/* Modal: Tạo yêu cầu trả hàng */}
+      {returnModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => !submittingReturn && setReturnModalOpen(false)}>
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-4 flex items-center gap-2">
+              <RotateCcw size={20} className="text-red-600" />
+              <h3 className="text-lg font-black text-[#1E3932]">Tạo yêu cầu trả hàng</h3>
+            </div>
+            <div className="space-y-3">
+              <label className="block">
+                <span className="text-xs font-bold uppercase text-gray-500">Sản phẩm cần trả</span>
+                <select value={returnItemId} onChange={(e) => setReturnItemId(e.target.value)} className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm">
+                  {order.items.map((it) => (
+                    <option key={it.id} value={it.id}>{it.productName} × {it.quantity}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="text-xs font-bold uppercase text-gray-500">Lý do</span>
+                <select value={returnReason} onChange={(e) => setReturnReason(e.target.value as ReturnReason)} className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm">
+                  <option value="damaged">Hàng hư hỏng / bao bì rách</option>
+                  <option value="wrong_item">Giao sai sản phẩm</option>
+                  <option value="quality">Không đạt chất lượng</option>
+                  <option value="other">Lý do khác</option>
+                </select>
+              </label>
+              <label className="block">
+                <span className="text-xs font-bold uppercase text-gray-500">Mô tả chi tiết *</span>
+                <textarea value={returnDescription} onChange={(e) => setReturnDescription(e.target.value)} rows={3} className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm" placeholder="Mô tả tình trạng sản phẩm, lý do trả..." />
+              </label>
+              <div className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                Yêu cầu sẽ chờ admin xét duyệt. Bạn sẽ nhận thông báo khi có cập nhật.
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button onClick={() => setReturnModalOpen(false)} disabled={submittingReturn} className="flex-1 rounded-full border border-gray-200 py-2 text-sm font-bold text-gray-700 hover:bg-gray-50">
+                  Hủy
+                </button>
+                <button onClick={() => void submitReturnRequest()} disabled={submittingReturn} className="flex flex-1 items-center justify-center gap-2 rounded-full bg-red-600 py-2 text-sm font-black text-white hover:bg-red-700 disabled:opacity-50">
+                  {submittingReturn && <LoaderCircle size={14} className="animate-spin" />}
+                  Gửi yêu cầu
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Báo nhận thiếu */}
+      {shortDeliveryModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => !submittingReturn && setShortDeliveryModalOpen(false)}>
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-4 flex items-center gap-2">
+              <AlertCircle size={20} className="text-amber-600" />
+              <h3 className="text-lg font-black text-[#1E3932]">Báo nhận thiếu</h3>
+            </div>
+            <p className="mb-3 text-xs text-gray-600">Nhập số lượng <strong>thực tế</strong> bạn nhận được. Các sản phẩm nhận đủ giữ nguyên số đã đặt.</p>
+            <div className="max-h-80 space-y-2 overflow-y-auto">
+              {order.items.map((it) => {
+                const actual = Number(shortQuantities[it.id] ?? it.quantity);
+                const isShort = actual < it.quantity;
+                return (
+                  <div key={it.id} className={`flex items-center justify-between gap-3 rounded-lg border p-3 ${isShort ? 'border-amber-300 bg-amber-50' : 'border-gray-200 bg-gray-50'}`}>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-bold text-[#1E3932]">{it.productName}</p>
+                      <p className="text-xs text-gray-500">Đã đặt: {it.quantity}</p>
+                    </div>
+                    <input
+                      type="number"
+                      min="0"
+                      max={it.quantity}
+                      value={shortQuantities[it.id] ?? String(it.quantity)}
+                      onChange={(e) => setShortQuantities((prev) => ({ ...prev, [it.id]: e.target.value }))}
+                      className="w-20 rounded-lg border border-gray-300 px-2 py-1.5 text-center text-sm font-bold"
+                    />
+                    {isShort && <span className="text-xs font-bold text-amber-700">Thiếu {it.quantity - actual}</span>}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              Sau khi gửi, admin sẽ xác minh với đơn vị vận chuyển và xử lý hoàn tiền/giao bù phần thiếu.
+            </div>
+            <div className="mt-4 flex gap-2">
+              <button onClick={() => setShortDeliveryModalOpen(false)} disabled={submittingReturn} className="flex-1 rounded-full border border-gray-200 py-2 text-sm font-bold text-gray-700 hover:bg-gray-50">
+                Hủy
+              </button>
+              <button onClick={() => void submitShortDelivery()} disabled={submittingReturn} className="flex flex-1 items-center justify-center gap-2 rounded-full bg-amber-600 py-2 text-sm font-black text-white hover:bg-amber-700 disabled:opacity-50">
+                {submittingReturn && <LoaderCircle size={14} className="animate-spin" />}
+                Báo nhận thiếu
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

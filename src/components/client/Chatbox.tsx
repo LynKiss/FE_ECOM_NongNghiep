@@ -1,11 +1,14 @@
 import {
   ChevronDown,
+  ExternalLink,
   Leaf,
   LoaderCircle,
   LogIn,
   MessageCircle,
+  Package,
   RefreshCw,
   Send,
+  ShoppingCart,
   X,
 } from 'lucide-react';
 import {
@@ -17,7 +20,7 @@ import {
 } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useClientSession } from '../../hooks/useClientSession';
-import { refreshGlobalCart } from '../../hooks/useCart';
+import { refreshGlobalCart, useCart } from '../../hooks/useCart';
 import { useToast } from '../../hooks/useToast';
 import { clientApi } from '../../lib/client-api';
 import {
@@ -57,52 +60,125 @@ type BotMessage = {
   products?: SupportBotProductSuggestion[];
 };
 
-const FAQ_RESPONSES: Record<string, string> = {
-  'giao hàng':
-    'Chúng tôi giao hàng toàn quốc trong 2-4 ngày làm việc. Miễn phí vận chuyển cho đơn từ 500.000đ.',
-  'vận chuyển':
-    'Phí vận chuyển từ 25.000đ tùy khu vực. Đơn từ 500.000đ được miễn phí ship toàn quốc.',
-  'đổi trả':
-    'Bạn có thể đổi trả sản phẩm trong vòng 7 ngày kể từ ngày nhận hàng nếu sản phẩm bị lỗi hoặc không đúng mô tả. Cần giữ nguyên bao bì + hóa đơn.',
-  'hoàn tiền':
-    'Hoàn tiền được xử lý trong 3-5 ngày làm việc sau khi đơn được duyệt trả hàng. Tiền sẽ về phương thức thanh toán ban đầu.',
-  'thanh toán':
-    'Chúng tôi hỗ trợ: COD (trả khi nhận), chuyển khoản ngân hàng, ví MoMo, VNPay, ZaloPay.',
-  'phân bón':
-    'Chúng tôi có đủ phân bón hữu cơ, phân NPK và phân vi sinh. Bạn có thể lọc theo "Phân bón" trong trang Sản phẩm.',
-  'thuốc':
-    'Chúng tôi bán thuốc bảo vệ thực vật chính hãng và có đầy đủ giấy phép lưu hành.',
-  'hạt giống':
-    'Có đủ hạt giống lúa, rau màu, cây ăn quả. Tỷ lệ nảy mầm trên 90%, có giấy chứng nhận từ viện giống.',
-  'dụng cụ':
-    'Có đầy đủ dụng cụ nông nghiệp: cuốc, xẻng, máy cày, bình phun, hệ thống tưới...',
-  'liên hệ':
-    'Hotline: 1800 6863 (miễn phí). Email: support@cultivatedledger.vn. Giờ làm việc: 7:00 - 21:00 mỗi ngày.',
-  'hotline':
-    'Gọi ngay 1800 6863 (miễn phí). Hỗ trợ 7-21h hàng ngày.',
-  'khuyến mãi':
-    'Cửa hàng thường xuyên có giảm giá. Xem ở trang chủ hoặc lọc "Đang giảm giá" trong trang Sản phẩm.',
-  'tài khoản':
-    'Bạn có thể đăng ký miễn phí ở góc trên phải. Tài khoản giúp lưu địa chỉ, theo dõi đơn hàng và tích điểm.',
-  'đăng ký':
-    'Bấm "Đăng ký" ở góc phải. Cần email + số điện thoại. Hoặc bạn có thể mua hàng theo dạng khách vãng lai (không cần đăng ký).',
-  'kho':
-    'Hệ thống kho trải khắp 3 miền. Đơn từ HCM, HN, ĐN giao trong 1-2 ngày, các tỉnh khác 2-4 ngày.',
-  'bảo hành':
-    'Sản phẩm có bảo hành theo nhà sản xuất. Vui lòng giữ hóa đơn để được hỗ trợ tốt nhất.',
-};
+// Bỏ dấu tiếng Việt để match input không dấu của user.
+// Vd: "giao hang" sẽ vẫn match keyword "giao hàng".
+function stripDiacritics(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/đ/g, 'd');
+}
+
+const FAQ_RESPONSES: Array<{ keys: string[]; response: string }> = [
+  {
+    keys: ['giao hàng', 'van chuyen', 'ship', 'thoi gian giao'],
+    response: '🚚 **Giao hàng**\n• Toàn quốc trong 2–4 ngày làm việc.\n• HCM/HN/ĐN: 1–2 ngày.\n• Miễn phí với đơn từ 500.000₫. Phí 25.000–45.000₫ tùy khu vực.',
+  },
+  {
+    keys: ['đổi trả', 'tra hang', 'tra lai', 'hoan tra', 'doi san pham'],
+    response: '↩️ **Đổi/Trả**\n• Trong 7 ngày kể từ ngày nhận hàng.\n• Áp dụng cho hàng lỗi, hư hỏng, sai mô tả.\n• Giữ nguyên bao bì + hóa đơn.\n• Bạn có thể tự tạo yêu cầu ngay trong trang "Đơn hàng của tôi".',
+  },
+  {
+    keys: ['hoàn tiền', 'refund', 'tien'],
+    response: '💸 **Hoàn tiền**\n• Sau khi admin duyệt trả hàng → 3–5 ngày làm việc.\n• Tiền về đúng phương thức thanh toán ban đầu (chuyển khoản/ví/COD = chuyển khoản về STK bạn cung cấp).',
+  },
+  {
+    keys: ['thanh toán', 'payment', 'tra tien', 'cod', 'momo', 'vnpay', 'zalopay', 'chuyen khoan'],
+    response: '💳 **Phương thức thanh toán**\n• COD (trả khi nhận)\n• Chuyển khoản ngân hàng\n• Ví điện tử: MoMo, VNPay, ZaloPay\n• Mua nợ (với khách doanh nghiệp được duyệt hạn mức)',
+  },
+  {
+    keys: ['phân bón', 'phan bon', 'npk', 'urea', 'kali', 'lan'],
+    response: '🌱 **Phân bón**\nCó đủ NPK, hữu cơ, vi sinh, urea, lân, kali...\n→ Vào trang Sản phẩm → lọc theo "Phân bón" để xem chi tiết và giá.',
+  },
+  {
+    keys: ['thuốc', 'thuoc bvtv', 'thuoc tru sau', 'thuoc benh'],
+    response: '🧪 **Thuốc BVTV**\nThuốc trừ sâu / trừ bệnh / trừ cỏ chính hãng có đầy đủ giấy phép lưu hành.\n⚠️ Việc kê đơn thuốc cụ thể cho cây trồng — vui lòng chuyển sang tab "Nhân viên" hoặc dùng tính năng "Chẩn đoán lúa AI".',
+  },
+  {
+    keys: ['hạt giống', 'hat giong', 'seed', 'giong lua', 'giong rau'],
+    response: '🌾 **Hạt giống**\n• Lúa OM5451, OM18, ST24, ST25\n• Rau màu, cây ăn quả\n• Tỷ lệ nảy mầm > 90%, có chứng nhận viện giống.',
+  },
+  {
+    keys: ['dụng cụ', 'dung cu', 'cuoc', 'xeng', 'binh phun', 'may cay'],
+    response: '🔧 **Dụng cụ nông nghiệp**\nCó đủ cuốc, xẻng, máy cày, máy phát cỏ, bình phun, hệ thống tưới nhỏ giọt...',
+  },
+  {
+    keys: ['liên hệ', 'lien he', 'hotline', 'email', 'so dien thoai'],
+    response: '📞 **Liên hệ**\n• Hotline: **1800 6863** (miễn phí)\n• Email: support@cultivatedledger.vn\n• Giờ làm việc: 7:00–21:00 mỗi ngày',
+  },
+  {
+    keys: ['khuyến mãi', 'khuyen mai', 'giam gia', 'sale', 'voucher', 'coupon', 'ma giam'],
+    response: '🎁 **Khuyến mãi**\n• Xem banner trang chủ.\n• Lọc "Đang giảm giá" trong trang Sản phẩm.\n• Mã voucher hiển thị ở trang "Ví voucher" sau khi đăng nhập.',
+  },
+  {
+    keys: ['tài khoản', 'tai khoan', 'dang ky', 'register', 'account', 'mat khau'],
+    response: '👤 **Tài khoản**\nBấm "Đăng ký" ở góc phải để tạo miễn phí (cần email + SĐT). Hoặc mua hàng theo dạng khách vãng lai.\nQuên mật khẩu? → "Quên mật khẩu" ở trang đăng nhập.',
+  },
+  {
+    keys: ['kho', 'warehouse', 'tinh thanh', 'khu vuc'],
+    response: '🏪 **Kho hàng**\nHệ thống kho trải khắp 3 miền, dùng FIFO/FEFO để ưu tiên xuất hàng sắp hết hạn.\n• Đơn HCM/HN/ĐN: 1–2 ngày\n• Các tỉnh khác: 2–4 ngày',
+  },
+  {
+    keys: ['bảo hành', 'bao hanh', 'warranty'],
+    response: '🛡️ **Bảo hành**\nTheo chính sách nhà sản xuất. Vui lòng giữ hóa đơn để được hỗ trợ tốt nhất.',
+  },
+  {
+    keys: ['hủy đơn', 'huy don', 'cancel order'],
+    response: '❌ **Hủy đơn hàng**\n• Đơn còn ở trạng thái "Chờ xử lý" → bạn tự hủy được ở trang "Đơn hàng của tôi".\n• Đơn đã xác nhận/đang giao → vui lòng liên hệ tab "Nhân viên".',
+  },
+  {
+    keys: ['hạn sử dụng', 'han su dung', 'hsd', 'expiry', 'het han'],
+    response: '⏱️ **Hạn sử dụng (HSD)**\nHệ thống FIFO/FEFO của chúng tôi luôn ưu tiên xuất lô sắp hết hạn trước.\nMỗi sản phẩm bạn nhận sẽ có HSD ≥ 3 tháng (trừ khi bạn chọn lô đang giảm giá vì cận date).',
+  },
+  {
+    keys: ['lúa', 'rice', 'benh lua', 'chan doan'],
+    response: '🌾 **Chẩn đoán bệnh lúa**\nDùng tính năng "Chẩn đoán lúa AI" trên menu chính: chụp ảnh lá lúa → AI gợi ý bệnh + thuốc phù hợp.\nKết quả mang tính tham khảo; với cây bị nặng, hãy chuyển nhân viên kỹ thuật.',
+  },
+];
 
 const BOT_WELCOME =
-  'Xin chào. Tôi là chatbot hỗ trợ của Cultivated Ledger. Tôi có thể trả lời nhanh về giao hàng, đổi trả, thanh toán và thông tin liên hệ.';
+  '👋 Chào bạn! Tôi là **trợ lý ảo** của Cultivated Ledger.\n\nTôi có thể giúp:\n🛒 Tìm sản phẩm (phân bón, hạt giống, thuốc BVTV, dụng cụ)\n📦 Tra cứu đơn hàng — gửi mã UUID hoặc đăng nhập\n💸 Chính sách giao hàng, đổi trả, thanh toán\n🌾 Hướng dẫn dùng chẩn đoán bệnh lúa AI\n\nChọn câu hỏi gợi ý bên dưới hoặc nhập câu hỏi tự do nhé!';
 
-const QUICK_QUESTIONS = [
-  'Chính sách giao hàng?',
-  'Tra cứu đơn hàng',
-  'Đổi trả như thế nào?',
-  'Các hình thức thanh toán?',
-  'Tìm sản phẩm',
-  'Hotline liên hệ?',
+// Nhóm theo chủ đề để hiển thị có cấu trúc trong widget
+const QUICK_QUESTION_GROUPS: Array<{ title: string; questions: string[] }> = [
+  {
+    title: '🚚 Vận chuyển & Đơn hàng',
+    questions: [
+      'Chính sách giao hàng?',
+      'Tra cứu đơn hàng của tôi',
+      'Hủy đơn được không?',
+    ],
+  },
+  {
+    title: '↩️ Đổi/Trả & Hoàn tiền',
+    questions: [
+      'Đổi trả như thế nào?',
+      'Khi nào tôi nhận được tiền hoàn?',
+      'Báo nhận thiếu hàng',
+    ],
+  },
+  {
+    title: '🛒 Sản phẩm',
+    questions: [
+      'Tìm phân NPK',
+      'Có hạt giống lúa OM5451 không?',
+      'Hạn sử dụng các lô hàng',
+      'Khuyến mãi hôm nay',
+    ],
+  },
+  {
+    title: '💳 Khác',
+    questions: [
+      'Các hình thức thanh toán?',
+      'Hotline liên hệ?',
+      'Chẩn đoán bệnh lúa',
+    ],
+  },
 ];
+
+// Flatten cho backward-compat với code hiện tại
+const QUICK_QUESTIONS = QUICK_QUESTION_GROUPS.flatMap((g) => g.questions);
 
 let botMessageIdCounter = 2;
 
@@ -146,17 +222,20 @@ function formatMessageTime(value: string | null) {
 }
 
 async function getBotResponse(text: string): Promise<string> {
-  const lower = text.toLowerCase().trim();
+  const raw = text.trim();
+  const normalized = stripDiacritics(raw);
 
-  // 1. Order tracking — pattern "tra cứu đơn", "đơn hàng X", "ORD-...", UUID
-  const uuidMatch = text.match(
+  // 1. Order tracking — UUID, "tra cuu don", "don hang cua toi", "ma don"
+  const uuidMatch = raw.match(
     /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i,
   );
   if (
     uuidMatch ||
-    lower.includes('tra cứu đơn') ||
-    lower.includes('đơn hàng của tôi') ||
-    lower.includes('mã đơn')
+    normalized.includes('tra cuu don') ||
+    normalized.includes('don hang cua toi') ||
+    normalized.includes('ma don') ||
+    normalized.includes('order id') ||
+    normalized.includes('don cua toi')
   ) {
     if (uuidMatch) {
       try {
@@ -169,28 +248,42 @@ async function getBotResponse(text: string): Promise<string> {
           shipping: '🚚 Đang giao',
           delivered: '🎉 Đã giao',
           partial_delivered: '📦 Giao một phần',
+          partial_returned: '↩️ Trả một phần',
           cancelled: '❌ Đã hủy',
           returned: '↩️ Đã hoàn',
         };
+        const dateStr = order.createdAt
+          ? new Date(order.createdAt).toLocaleDateString('vi-VN')
+          : '—';
         return [
-          `Đơn hàng ${order.id?.slice(0, 8) ?? '...'}`,
-          `Trạng thái: ${STATUS_VI[order.status] ?? order.status}`,
-          `Tổng tiền: ${Number(order.totalPayment).toLocaleString('vi-VN')}₫`,
-          `Số lượng: ${order.totalQuantity} sản phẩm`,
-          `Người nhận: ${order.fullName} - ${order.phone}`,
+          `📦 **Đơn hàng ${order.id?.slice(0, 8) ?? '...'}**`,
+          `• Trạng thái: ${STATUS_VI[order.status] ?? order.status}`,
+          `• Ngày đặt: ${dateStr}`,
+          `• Tổng tiền: **${Number(order.totalPayment).toLocaleString('vi-VN')}₫**`,
+          `• Số lượng: ${order.totalQuantity} sản phẩm`,
+          `• Người nhận: ${order.fullName} (${order.phone})`,
         ].join('\n');
       } catch {
-        return 'Không tìm thấy đơn hàng với mã này. Vui lòng kiểm tra lại hoặc đăng nhập để xem danh sách đơn của bạn.';
+        return 'Không tìm thấy đơn hàng với mã này. Vui lòng kiểm tra lại hoặc đăng nhập để xem danh sách đơn của bạn ở trang "Đơn hàng của tôi".';
       }
     }
-    return '📋 Bạn có thể:\n• Đăng nhập rồi vào "Đơn hàng của tôi"\n• Gửi tôi mã đơn (UUID) để tra cứu nhanh\n• Hoặc gọi 1800 6863 để được hỗ trợ.';
+    return '📋 **Tra cứu đơn hàng**\n• Đăng nhập rồi vào "Đơn hàng của tôi" để xem toàn bộ.\n• Gửi tôi mã đơn (định dạng UUID 36 ký tự) để tra cứu nhanh.\n• Hoặc gọi hotline **1800 6863**.';
   }
 
   // 2. Product search
-  if (lower.includes('tìm sản phẩm') || lower.includes('tìm kiếm') || lower.startsWith('tìm ')) {
-    const query = text.replace(/tìm (sản phẩm|kiếm)?/gi, '').trim();
+  if (
+    normalized.includes('tim san pham') ||
+    normalized.includes('tim kiem') ||
+    normalized.startsWith('tim ') ||
+    normalized.startsWith('mua ') ||
+    normalized.includes('co ban ') ||
+    normalized.includes('co loai ')
+  ) {
+    const query = raw
+      .replace(/tìm (sản phẩm|kiếm)?|tim (san pham|kiem)?|mua\s+|có bán\s*|có loại\s*/gi, '')
+      .trim();
     if (query.length < 2) {
-      return 'Bạn muốn tìm sản phẩm gì? Hãy nhập tên sản phẩm bạn cần (VD: "tìm phân NPK").';
+      return 'Bạn muốn tìm sản phẩm gì? Hãy nhập tên sản phẩm cụ thể (VD: "tìm phân NPK 16-16-8").';
     }
     try {
       const data = await clientApi.get<{ items: any[] }>(
@@ -198,42 +291,60 @@ async function getBotResponse(text: string): Promise<string> {
       );
       const items = data.items ?? [];
       if (items.length === 0) {
-        return `Không tìm thấy sản phẩm nào khớp với "${query}". Bạn có thể vào trang Sản phẩm để xem danh mục đầy đủ.`;
+        return `🔍 Không tìm thấy sản phẩm nào khớp với "${query}".\nThử từ khóa khác hoặc vào trang Sản phẩm để xem danh mục đầy đủ.`;
       }
       const list = items
         .slice(0, 5)
-        .map(
-          (p, i) =>
-            `${i + 1}. ${p.productName} — ${Number(p.effectivePrice ?? p.basePrice).toLocaleString('vi-VN')}₫`,
-        )
+        .map((p, i) => {
+          const price = Number(p.effectivePrice ?? p.basePrice).toLocaleString('vi-VN');
+          const stockNote = p.quantityAvailable > 0 ? `còn ${p.quantityAvailable}` : '⚠️ tạm hết';
+          return `${i + 1}. **${p.productName}** — ${price}₫ (${stockNote})`;
+        })
         .join('\n');
-      return `🔍 Tìm thấy ${items.length} sản phẩm:\n${list}\n\nXem chi tiết tại trang Sản phẩm.`;
+      return `🔍 Tìm thấy ${items.length} sản phẩm cho "${query}":\n${list}\n\n→ Bấm vào tên sản phẩm trên trang Sản phẩm để xem chi tiết và đặt mua.`;
     } catch {
-      return 'Không tải được kết quả tìm kiếm. Vui lòng thử lại sau.';
+      return 'Không tải được kết quả tìm kiếm. Vui lòng thử lại sau hoặc kiểm tra kết nối mạng.';
     }
   }
 
-  // 3. FAQ keyword match
-  for (const [keyword, response] of Object.entries(FAQ_RESPONSES)) {
-    if (lower.includes(keyword)) {
-      return response;
+  // 3. Chính sách / FAQ (accent-insensitive)
+  for (const item of FAQ_RESPONSES) {
+    if (item.keys.some((k) => normalized.includes(stripDiacritics(k)))) {
+      return item.response;
     }
   }
 
   // 4. Greetings
-  if (/^(xin chào|hello|hi|chào|hey)/.test(lower)) {
-    return 'Chào bạn! Tôi có thể giúp gì? Bạn có thể hỏi về giao hàng, đổi trả, thanh toán, hoặc gửi mã đơn để tra cứu.';
+  if (/^(xin chao|chao|hello|hi|hey|alo|chao ban)/.test(normalized)) {
+    return [
+      'Chào bạn! 👋 Tôi là trợ lý ảo của Cultivated Ledger.',
+      '',
+      'Tôi có thể giúp:',
+      '🛒 Tìm sản phẩm — nhập "tìm phân NPK"',
+      '📦 Tra cứu đơn hàng — gửi mã đơn UUID',
+      '💸 Chính sách: giao hàng, đổi trả, thanh toán, bảo hành',
+      '🌾 Chẩn đoán bệnh lúa — vào menu chính',
+      '',
+      'Cần gặp nhân viên thật? → Bấm tab **"Nhân viên"** ở trên.',
+    ].join('\n');
   }
 
-  // 5. Default fallback
+  // 5. Thanks
+  if (/cam on|cảm ơn|thanks|thank you|tks/.test(normalized)) {
+    return 'Rất vui được giúp bạn 🙌. Còn câu hỏi nào nữa không?';
+  }
+
+  // 6. Default fallback
   return [
-    'Tôi chưa hiểu câu hỏi của bạn 😊',
+    'Tôi chưa hiểu rõ câu hỏi của bạn 🤔.',
     '',
-    'Tôi có thể giúp:',
-    '• Trả lời FAQ (giao hàng, đổi trả, thanh toán, ...)',
-    '• Tra cứu đơn hàng (gửi tôi mã đơn UUID)',
-    '• Tìm sản phẩm ("tìm phân NPK")',
-    '• Chuyển sang tab "Nhân viên" để chat trực tiếp với CSKH',
+    'Bạn thử các gợi ý sau:',
+    '• "Chính sách giao hàng"',
+    '• "Đổi trả như thế nào"',
+    '• "Tìm phân NPK"',
+    '• Gửi mã đơn UUID để tra cứu',
+    '',
+    'Nếu cần CSKH thật → bấm tab **"Nhân viên"** ở trên.',
   ].join('\n');
 }
 
@@ -256,8 +367,11 @@ function formatBotCurrency(value: string) {
 export default function Chatbox() {
   const { session } = useClientSession();
   const { showToast } = useToast();
+  const { addItem } = useCart();
   const navigate = useNavigate();
   const location = useLocation();
+
+  const [addingToCartId, setAddingToCartId] = useState<string | null>(null);
 
   const [open, setOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<BotTab>('bot');
@@ -288,6 +402,108 @@ export default function Chatbox() {
   const supportMessagesEndRef = useRef<HTMLDivElement | null>(null);
   const botMessagesEndRef = useRef<HTMLDivElement | null>(null);
   const botTimerRef = useRef<number | null>(null);
+
+  const handleAddProductToCart = async (productId: string, productName: string) => {
+    setAddingToCartId(productId);
+    try {
+      await addItem(productId, 1);
+      showToast({
+        tone: 'success',
+        title: 'Đã thêm vào giỏ',
+        description: productName,
+      });
+    } catch (err) {
+      showToast({
+        tone: 'error',
+        title: 'Không thêm được',
+        description: err instanceof Error ? err.message : 'Vui lòng thử lại sau.',
+      });
+    } finally {
+      setAddingToCartId(null);
+    }
+  };
+
+  const handleViewProduct = (productId: string) => {
+    setOpen(false);
+    void navigate(`/client/products/${productId}`);
+  };
+
+  // Dò keyword trong text reply để render quick-action chips.
+  // Mỗi message bot có thể có 0–3 chip điều hướng nhanh.
+  type BotAction = { label: string; icon: string; onClick: () => void };
+  const getMessageActions = (text: string): BotAction[] => {
+    const normalized = stripDiacritics(text);
+    const actions: BotAction[] = [];
+    const seen = new Set<string>();
+    const push = (key: string, action: BotAction) => {
+      if (seen.has(key)) return;
+      seen.add(key);
+      actions.push(action);
+    };
+
+    if (normalized.includes('don hang') || normalized.includes('tra cuu') || normalized.includes('don cua toi')) {
+      push('orders', {
+        label: 'Đơn hàng của tôi',
+        icon: '📦',
+        onClick: () => { setOpen(false); void navigate('/client/orders'); },
+      });
+    }
+    if (normalized.includes('san pham') || normalized.includes('trang san pham') || normalized.includes('mua') || normalized.includes('tim ')) {
+      push('products', {
+        label: 'Xem sản phẩm',
+        icon: '🛒',
+        onClick: () => { setOpen(false); void navigate('/client/products'); },
+      });
+    }
+    if (normalized.includes('voucher') || normalized.includes('khuyen mai') || normalized.includes('giam gia') || normalized.includes('coupon')) {
+      push('voucher', {
+        label: 'Ví voucher',
+        icon: '🎁',
+        onClick: () => { setOpen(false); void navigate('/client/vouchers'); },
+      });
+    }
+    if (normalized.includes('chan doan') || normalized.includes('benh lua') || normalized.includes('rice diagnosis')) {
+      push('rice', {
+        label: 'Mở chẩn đoán lúa',
+        icon: '🌾',
+        onClick: () => { setOpen(false); void navigate('/client/rice-diagnosis'); },
+      });
+    }
+    if (normalized.includes('gio hang') || normalized.includes('xem gio')) {
+      push('cart', {
+        label: 'Xem giỏ hàng',
+        icon: '🛍️',
+        onClick: () => { setOpen(false); void navigate('/client/cart'); },
+      });
+    }
+    if (normalized.includes('dang nhap') || normalized.includes('login')) {
+      if (!session) {
+        push('login', {
+          label: 'Đăng nhập',
+          icon: '🔑',
+          onClick: () => { setOpen(false); void navigate('/client/login'); },
+        });
+      }
+    }
+    if (normalized.includes('nhan vien') || normalized.includes('staff') || normalized.includes('cskh')) {
+      push('support', {
+        label: 'Chuyển nhân viên',
+        icon: '👤',
+        onClick: () => setActiveTab('support'),
+      });
+    }
+    if (normalized.includes('dia chi') || normalized.includes('giao hang den')) {
+      if (session) {
+        push('address', {
+          label: 'Quản lý địa chỉ',
+          icon: '📍',
+          onClick: () => { setOpen(false); void navigate('/client/account/addresses'); },
+        });
+      }
+    }
+
+    return actions.slice(0, 3); // tối đa 3 chip / message
+  };
 
   useEffect(() => {
     openRef.current = open;
@@ -847,34 +1063,111 @@ export default function Chatbox() {
                           }
                         >
                           <p className="whitespace-pre-line">{message.text}</p>
-                          {!isUser && message.products?.length ? (
-                            <div className="mt-3 space-y-2">
-                              {message.products.map((product) => (
+                          {!isUser && getMessageActions(message.text).length > 0 ? (
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              {getMessageActions(message.text).map((action) => (
                                 <button
-                                  key={product.productId}
+                                  key={action.label}
                                   type="button"
-                                  onClick={() => {
-                                    setOpen(false);
-                                    void navigate(
-                                      `/client/products/${product.productId}`,
-                                    );
-                                  }}
-                                  className="block w-full rounded-xl border border-[#006241]/10 bg-white/75 px-3 py-2 text-left transition hover:border-[#006241]/25 hover:bg-white"
+                                  onClick={action.onClick}
+                                  className="inline-flex items-center gap-1 rounded-full border border-[#006241]/20 bg-white px-2.5 py-1 text-[11px] font-bold text-[#006241] transition hover:bg-[#006241] hover:text-white"
                                 >
-                                  <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#006241]/70">
-                                    {product.quantityAvailable > 0
-                                      ? 'Goi y san pham'
-                                      : 'Tam het hang'}
-                                  </p>
-                                  <p className="mt-1 text-sm font-bold text-[#1E3932]">
-                                    {product.productName}
-                                  </p>
-                                  <p className="mt-1 text-xs text-gray-500">
-                                    {formatBotCurrency(product.effectivePrice)}
-                                    {product.unit ? ` / ${product.unit}` : ''}
-                                  </p>
+                                  <span>{action.icon}</span>
+                                  {action.label}
                                 </button>
                               ))}
+                            </div>
+                          ) : null}
+                          {!isUser && message.products?.length ? (
+                            <div className="mt-3 space-y-2">
+                              {message.products.map((product) => {
+                                const outOfStock = product.quantityAvailable <= 0;
+                                const isAdding = addingToCartId === product.productId;
+                                const hasDiscount =
+                                  Number(product.basePrice) >
+                                  Number(product.effectivePrice);
+                                return (
+                                  <div
+                                    key={product.productId}
+                                    className="overflow-hidden rounded-xl border border-[#006241]/10 bg-white"
+                                  >
+                                    <div className="flex gap-2.5 p-2">
+                                      {product.primaryImageUrl ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleViewProduct(product.productId)}
+                                          className="h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-[#f2f0eb]"
+                                        >
+                                          <img
+                                            src={product.primaryImageUrl}
+                                            alt={product.productName}
+                                            className="h-full w-full object-cover transition hover:scale-105"
+                                            loading="lazy"
+                                          />
+                                        </button>
+                                      ) : (
+                                        <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-[#f2f0eb] text-[#006241]/40">
+                                          <Package size={24} />
+                                        </div>
+                                      )}
+                                      <div className="min-w-0 flex-1">
+                                        <p className="text-[9px] font-black uppercase tracking-[0.16em] text-[#006241]/70">
+                                          {outOfStock ? '⚠️ Tạm hết hàng' : `Còn ${product.quantityAvailable}${product.unit ? ` ${product.unit}` : ''}`}
+                                        </p>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleViewProduct(product.productId)}
+                                          className="mt-0.5 line-clamp-2 text-left text-[13px] font-bold leading-snug text-[#1E3932] hover:text-[#006241]"
+                                        >
+                                          {product.productName}
+                                        </button>
+                                        <div className="mt-1 flex flex-wrap items-baseline gap-1.5">
+                                          <span className="text-sm font-black text-[#006241]">
+                                            {formatBotCurrency(product.effectivePrice)}
+                                          </span>
+                                          {hasDiscount ? (
+                                            <span className="text-[10px] text-gray-400 line-through">
+                                              {formatBotCurrency(product.basePrice)}
+                                            </span>
+                                          ) : null}
+                                        </div>
+                                      </div>
+                                    </div>
+                                    <div className="flex border-t border-[#006241]/10">
+                                      <button
+                                        type="button"
+                                        disabled={outOfStock || isAdding}
+                                        onClick={() =>
+                                          void handleAddProductToCart(
+                                            product.productId,
+                                            product.productName,
+                                          )
+                                        }
+                                        className="flex flex-1 items-center justify-center gap-1.5 py-2 text-[11px] font-bold transition disabled:cursor-not-allowed disabled:opacity-40"
+                                        style={{
+                                          color: outOfStock ? '#9ca3af' : '#006241',
+                                        }}
+                                      >
+                                        {isAdding ? (
+                                          <LoaderCircle size={12} className="animate-spin" />
+                                        ) : (
+                                          <ShoppingCart size={12} />
+                                        )}
+                                        {outOfStock ? 'Hết hàng' : 'Thêm vào giỏ'}
+                                      </button>
+                                      <div className="w-px bg-[#006241]/10" />
+                                      <button
+                                        type="button"
+                                        onClick={() => handleViewProduct(product.productId)}
+                                        className="flex flex-1 items-center justify-center gap-1.5 py-2 text-[11px] font-bold text-[#1E3932] transition hover:bg-[#006241]/5"
+                                      >
+                                        <ExternalLink size={12} />
+                                        Chi tiết
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              })}
                             </div>
                           ) : null}
                         </div>
@@ -904,17 +1197,27 @@ export default function Chatbox() {
                 </div>
               </div>
 
+              {/* Quick questions grouped by topic, dạng accordion ngang */}
               <div className="border-t border-black/5 bg-white px-3 py-2">
-                <div className="flex gap-1.5 overflow-x-auto pb-1">
-                  {QUICK_QUESTIONS.map((question) => (
-                    <button
-                      key={question}
-                      type="button"
-                      onClick={() => handleSendBotMessage(question)}
-                      className="shrink-0 rounded-full border border-[#006241]/20 px-3 py-1.5 text-[11px] font-semibold text-[#006241] transition hover:bg-[#006241]/10"
-                    >
-                      {question}
-                    </button>
+                <div className="space-y-1.5">
+                  {QUICK_QUESTION_GROUPS.map((group) => (
+                    <div key={group.title}>
+                      <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-[#006241]/70">
+                        {group.title}
+                      </p>
+                      <div className="flex gap-1.5 overflow-x-auto pb-0.5">
+                        {group.questions.map((question) => (
+                          <button
+                            key={question}
+                            type="button"
+                            onClick={() => handleSendBotMessage(question)}
+                            className="shrink-0 rounded-full border border-[#006241]/20 px-2.5 py-1 text-[11px] font-semibold text-[#006241] transition hover:bg-[#006241]/10"
+                          >
+                            {question}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   ))}
                 </div>
               </div>

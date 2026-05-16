@@ -30,10 +30,11 @@ type OrderStatus =
   | 'shipping'
   | 'delivered'
   | 'partial_delivered'
+  | 'partial_returned'
   | 'cancelled'
   | 'returned';
 
-type PaymentStatus = 'unpaid' | 'paid' | 'failed' | 'refunded';
+type PaymentStatus = 'unpaid' | 'paid' | 'failed' | 'partial_refunded' | 'refunded';
 
 type OrderItem = {
   id: string;
@@ -112,6 +113,7 @@ const STATUS_OPTIONS: OrderStatus[] = [
   'shipping',
   'delivered',
   'partial_delivered',
+  'partial_returned',
   'cancelled',
   'returned',
 ];
@@ -122,8 +124,9 @@ const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   confirmed: ['processing', 'cancelled'],
   processing: ['shipping', 'delivered', 'cancelled'],
   shipping: ['delivered', 'partial_delivered', 'returned'],
-  partial_delivered: ['returned'],
-  delivered: ['returned'],
+  partial_delivered: ['returned', 'partial_returned'],
+  partial_returned: ['returned'],
+  delivered: ['returned', 'partial_returned'],
   cancelled: [],
   returned: [],
 };
@@ -708,6 +711,7 @@ export default function Orders() {
           { status: 'shipping', label: isVietnamese ? 'Đang giao' : 'Shipping', color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-200' },
           { status: 'delivered', label: isVietnamese ? 'Đã giao' : 'Delivered', color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-200' },
           { status: 'partial_delivered', label: isVietnamese ? 'Giao 1 phần' : 'Partial', color: 'text-orange-600', bg: 'bg-orange-50', border: 'border-orange-200' },
+          { status: 'partial_returned', label: isVietnamese ? 'Trả 1 phần' : 'Part-returned', color: 'text-amber-700', bg: 'bg-amber-50', border: 'border-amber-300' },
           { status: 'cancelled', label: isVietnamese ? 'Đã hủy' : 'Cancelled', color: 'text-red-600', bg: 'bg-red-50', border: 'border-red-200' },
           { status: 'returned', label: isVietnamese ? 'Hoàn trả' : 'Returned', color: 'text-zinc-600', bg: 'bg-zinc-50', border: 'border-zinc-200' },
         ].map(({ status: s, label, color, bg, border }) => {
@@ -1400,6 +1404,7 @@ function getStatusLabel(status: OrderStatus, isVietnamese: boolean) {
       shipping: 'Đang giao',
       delivered: 'Đã giao',
       partial_delivered: 'Giao một phần',
+      partial_returned: 'Trả một phần',
       cancelled: 'Đã hủy',
       returned: 'Đã hoàn',
     }
@@ -1411,6 +1416,7 @@ function getStatusLabel(status: OrderStatus, isVietnamese: boolean) {
       shipping: 'Shipping',
       delivered: 'Delivered',
       partial_delivered: 'Partial delivered',
+      partial_returned: 'Partial returned',
       cancelled: 'Cancelled',
       returned: 'Returned',
     };
@@ -1424,12 +1430,14 @@ function getPaymentLabel(status: PaymentStatus, isVietnamese: boolean) {
       unpaid: 'Chưa thanh toán',
       paid: 'Đã thanh toán',
       failed: 'Thất bại',
+      partial_refunded: 'Hoàn 1 phần',
       refunded: 'Đã hoàn tiền',
     }
     : {
       unpaid: 'Unpaid',
       paid: 'Paid',
       failed: 'Failed',
+      partial_refunded: 'Partial refunded',
       refunded: 'Refunded',
     };
 
@@ -1445,6 +1453,7 @@ function getStatusTone(status: OrderStatus): BadgeTone {
     shipping: 'primary',
     delivered: 'emerald',
     partial_delivered: 'amber',
+    partial_returned: 'amber',
     cancelled: 'red',
     returned: 'zinc',
   };
@@ -1456,6 +1465,7 @@ function getPaymentTone(status: PaymentStatus): BadgeTone {
     unpaid: 'red',
     paid: 'emerald',
     failed: 'amber',
+    partial_refunded: 'amber',
     refunded: 'sky',
   };
   return tones[status];

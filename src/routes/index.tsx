@@ -70,6 +70,8 @@ const ClientWishlistPage = lazy(() => import('../features/client/wishlist/page')
 const ClientAddressesPage = lazy(() => import('../features/client/addresses/page'));
 const ClientRiceDiagnosisPage = lazy(() => import('../features/client/rice-diagnosis/page'));
 
+const AgriInventoryPage = lazy(() => import('../pages/AgriInventory'));
+
 const LoginPage = lazy(() => import('../pages/Login'));
 const SuperAdminLoginPage = lazy(() => import('../pages/SuperAdminLogin'));
 
@@ -139,6 +141,7 @@ export const router = createBrowserRouter([
               { path: 'aging-debt', element: withSuspense(<AgingDebtPage />) },
               { path: 'credit-limits', element: withSuspense(<CreditLimitsPage />) },
               { path: 'audit-logs', element: withSuspense(<AuditLogsPage />) },
+              { path: 'agri-inventory', element: withSuspense(<AgriInventoryPage />) },
               { path: 'super-admin', element: withSuspense(<SuperAdminConfigPage />) },
             ],
           },

@@ -68,6 +68,22 @@ export default function ReturnsAdminPage() {
     setInspectNote('');
   };
 
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  // Chuyển status return: REQUESTED→APPROVED/REJECTED, APPROVED→RECEIVED, RECEIVED→REFUNDED...
+  const transitionStatus = async (returnId: string, nextStatus: ReturnStatus, confirmMsg?: string) => {
+    if (confirmMsg && !window.confirm(confirmMsg)) return;
+    setBusyId(returnId);
+    try {
+      await apiClient.patch(`/returns/${returnId}/status`, { status: nextStatus });
+      await load();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Không cập nhật được trạng thái');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const handleInspect = async () => {
     if (!inspectModal) return;
     if (inspectDecision === 'pending') return;
@@ -165,17 +181,56 @@ export default function ReturnsAdminPage() {
                       {new Date(r.createdAt).toLocaleDateString('vi-VN')}
                     </td>
                     <td className="px-4 py-2.5 text-right">
-                      {r.returnStatus === 'received' &&
-                      r.inspectionStatus === 'pending' ? (
-                        <button
-                          onClick={() => openInspect(r)}
-                          className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary/90"
-                        >
-                          Kiểm tra
-                        </button>
-                      ) : (
-                        <span className="text-xs text-on-surface-variant">—</span>
-                      )}
+                      <div className="flex justify-end gap-1.5">
+                        {r.returnStatus === 'requested' && (
+                          <>
+                            <button
+                              onClick={() => void transitionStatus(r.returnId, 'approved', `Duyệt yêu cầu trả ${r.returnId}?`)}
+                              disabled={busyId === r.returnId}
+                              className="rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700 disabled:opacity-50"
+                            >
+                              Duyệt
+                            </button>
+                            <button
+                              onClick={() => void transitionStatus(r.returnId, 'rejected', `Từ chối yêu cầu trả ${r.returnId}?`)}
+                              disabled={busyId === r.returnId}
+                              className="rounded-lg border border-red-300 bg-surface px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
+                            >
+                              Từ chối
+                            </button>
+                          </>
+                        )}
+                        {r.returnStatus === 'approved' && (
+                          <button
+                            onClick={() => void transitionStatus(r.returnId, 'received', `Xác nhận đã nhận hàng trả ${r.returnId} về kho?`)}
+                            disabled={busyId === r.returnId}
+                            className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                          >
+                            Đã nhận hàng trả
+                          </button>
+                        )}
+                        {r.returnStatus === 'received' && r.inspectionStatus === 'pending' && (
+                          <button
+                            onClick={() => openInspect(r)}
+                            className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary/90"
+                          >
+                            Kiểm tra
+                          </button>
+                        )}
+                        {r.returnStatus === 'inspected' && (
+                          <button
+                            onClick={() => void transitionStatus(r.returnId, 'refunded', `Đánh dấu đã hoàn tiền cho ${r.returnId}?`)}
+                            disabled={busyId === r.returnId}
+                            className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                          >
+                            Hoàn tiền
+                          </button>
+                        )}
+                        {(r.returnStatus === 'rejected' || r.returnStatus === 'refunded' ||
+                          (r.returnStatus === 'received' && r.inspectionStatus !== 'pending')) && (
+                          <span className="text-xs text-on-surface-variant">—</span>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))
