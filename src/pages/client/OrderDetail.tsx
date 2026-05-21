@@ -32,6 +32,7 @@ type OrderItem = {
   id: string;
   productId: string;
   productName: string;
+  primaryImageUrl: string | null;
   quantity: number;
   unitPrice: number;
   lineTotal: number;
@@ -637,12 +638,27 @@ export default function OrderDetail() {
                         className="h-4 w-4 shrink-0 cursor-pointer accent-[#006241]"
                       />
                     )}
-                    <div
-                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl"
-                      style={{ background: '#d4e9e2' }}
-                    >
-                      <Leaf size={18} style={{ color: '#006241' }} />
-                    </div>
+                    {item.primaryImageUrl ? (
+                      <Link
+                        to={`/client/products/${item.productId}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-[#006241]/10 bg-[#f2f0eb]"
+                      >
+                        <img
+                          src={item.primaryImageUrl}
+                          alt={item.productName}
+                          className="h-full w-full object-cover transition hover:scale-105"
+                          loading="lazy"
+                        />
+                      </Link>
+                    ) : (
+                      <div
+                        className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl"
+                        style={{ background: '#d4e9e2' }}
+                      >
+                        <Leaf size={18} style={{ color: '#006241' }} />
+                      </div>
+                    )}
                     <div className="min-w-0 flex-1">
                       <Link
                         to={`/client/products/${item.productId}`}

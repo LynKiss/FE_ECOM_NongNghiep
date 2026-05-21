@@ -30,7 +30,8 @@ interface AgingResponse {
 
 interface Supplier {
   supplierId: string;
-  supplierName: string;
+  name: string;
+  code?: string | null;
 }
 
 const BUCKET_LABELS: Record<string, { label: string; color: string; bar: string }> = {
@@ -117,7 +118,11 @@ export default function AgingDebtPage() {
             <label className="mb-1 block text-xs text-on-surface-variant">Nhà cung cấp</label>
             <select className="rounded-lg border border-outline-variant bg-surface px-3 py-1.5 text-sm focus:ring-2 focus:ring-primary" value={filterSupplierId} onChange={(e) => setFilterSupplierId(e.target.value)}>
               <option value="">Tất cả NCC</option>
-              {suppliers.map((s) => <option key={s.supplierId} value={s.supplierId}>{s.supplierName}</option>)}
+              {suppliers.map((s) => (
+                <option key={s.supplierId} value={s.supplierId}>
+                  {s.name}{s.code ? ` (${s.code})` : ''}
+                </option>
+              ))}
             </select>
           </div>
           <div>
@@ -188,7 +193,7 @@ export default function AgingDebtPage() {
                 return (
                   <tr key={po.poId} className="hover:bg-surface-variant/40">
                     <td className="px-4 py-2.5 font-mono text-xs text-primary">{po.poCode}</td>
-                    <td className="px-4 py-2.5 text-on-surface">{supplier?.supplierName ?? po.supplierId}</td>
+                    <td className="px-4 py-2.5 text-on-surface">{supplier?.name ?? po.supplierId}</td>
                     <td className="px-4 py-2.5 text-xs text-on-surface-variant">
                       {po.orderDate ? new Date(po.orderDate).toLocaleDateString('vi-VN') : '—'}
                     </td>

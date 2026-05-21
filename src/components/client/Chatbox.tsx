@@ -44,6 +44,18 @@ type SupportBotProductSuggestion = {
   primaryImageUrl: string | null;
 };
 
+type SupportBotAction = {
+  type:
+    | 'navigate'
+    | 'switch_tab'
+    | 'send_message'
+    | 'login'
+    | 'view_product'
+    | 'add_to_cart';
+  label: string;
+  target: string;
+};
+
 type SupportBotReply = {
   reply: string;
   source: 'ai' | 'fallback';
@@ -51,6 +63,9 @@ type SupportBotReply = {
   products: SupportBotProductSuggestion[];
   intent: string;
   cartChanged?: boolean;
+  actions?: SupportBotAction[];
+  suggestedQuestions?: string[];
+  severity?: 'info' | 'warning' | 'success';
 };
 
 type BotMessage = {
@@ -58,6 +73,9 @@ type BotMessage = {
   from: 'user' | 'bot';
   text: string;
   products?: SupportBotProductSuggestion[];
+  actions?: SupportBotAction[];
+  suggestedQuestions?: string[];
+  severity?: 'info' | 'warning' | 'success';
 };
 
 // Bỏ dấu tiếng Việt để match input không dấu của user.
@@ -177,8 +195,35 @@ const QUICK_QUESTION_GROUPS: Array<{ title: string; questions: string[] }> = [
   },
 ];
 
-// Flatten cho backward-compat với code hiện tại
-const QUICK_QUESTIONS = QUICK_QUESTION_GROUPS.flatMap((g) => g.questions);
+const BUSINESS_QUICK_QUESTION_GROUPS: Array<{
+  title: string;
+  questions: string[];
+}> = [
+  {
+    title: 'Đơn hàng',
+    questions: ['Đơn hàng của tôi đang ở đâu?', 'Tôi muốn hủy đơn'],
+  },
+  {
+    title: 'Sản phẩm',
+    questions: ['Tìm phân NPK', 'Tư vấn hạt giống lúa'],
+  },
+  {
+    title: 'Thanh toán',
+    questions: ['Các hình thức thanh toán?', 'Mã giảm giá hôm nay'],
+  },
+  {
+    title: 'Đổi trả',
+    questions: ['Đổi trả như thế nào?', 'Bao lâu được hoàn tiền?'],
+  },
+  {
+    title: 'Chẩn đoán lúa',
+    questions: ['Cách dùng chẩn đoán bệnh lúa', 'Tôi cần kỹ thuật viên'],
+  },
+  {
+    title: 'Tài khoản',
+    questions: ['Tôi quên mật khẩu', 'Gặp nhân viên'],
+  },
+];
 
 let botMessageIdCounter = 2;
 
@@ -382,6 +427,7 @@ export default function Chatbox() {
   const [botInput, setBotInput] = useState('');
   const [botTyping, setBotTyping] = useState(false);
   const [botUnreadCount, setBotUnreadCount] = useState(0);
+  const [quickPanelOpen, setQuickPanelOpen] = useState(true);
 
   const [conversations, setConversations] = useState<SupportConversation[]>([]);
   const [conversation, setConversation] = useState<SupportConversation | null>(
@@ -428,82 +474,79 @@ export default function Chatbox() {
     void navigate(`/client/products/${productId}`);
   };
 
-  // Dò keyword trong text reply để render quick-action chips.
-  // Mỗi message bot có thể có 0–3 chip điều hướng nhanh.
-  type BotAction = { label: string; icon: string; onClick: () => void };
-  const getMessageActions = (text: string): BotAction[] => {
-    const normalized = stripDiacritics(text);
-    const actions: BotAction[] = [];
-    const seen = new Set<string>();
-    const push = (key: string, action: BotAction) => {
-      if (seen.has(key)) return;
-      seen.add(key);
-      actions.push(action);
-    };
-
-    if (normalized.includes('don hang') || normalized.includes('tra cuu') || normalized.includes('don cua toi')) {
-      push('orders', {
-        label: 'Đơn hàng của tôi',
-        icon: '📦',
-        onClick: () => { setOpen(false); void navigate('/client/orders'); },
-      });
-    }
-    if (normalized.includes('san pham') || normalized.includes('trang san pham') || normalized.includes('mua') || normalized.includes('tim ')) {
-      push('products', {
-        label: 'Xem sản phẩm',
-        icon: '🛒',
-        onClick: () => { setOpen(false); void navigate('/client/products'); },
-      });
-    }
-    if (normalized.includes('voucher') || normalized.includes('khuyen mai') || normalized.includes('giam gia') || normalized.includes('coupon')) {
-      push('voucher', {
-        label: 'Ví voucher',
-        icon: '🎁',
-        onClick: () => { setOpen(false); void navigate('/client/vouchers'); },
-      });
-    }
-    if (normalized.includes('chan doan') || normalized.includes('benh lua') || normalized.includes('rice diagnosis')) {
-      push('rice', {
-        label: 'Mở chẩn đoán lúa',
-        icon: '🌾',
-        onClick: () => { setOpen(false); void navigate('/client/rice-diagnosis'); },
-      });
-    }
-    if (normalized.includes('gio hang') || normalized.includes('xem gio')) {
-      push('cart', {
-        label: 'Xem giỏ hàng',
-        icon: '🛍️',
-        onClick: () => { setOpen(false); void navigate('/client/cart'); },
-      });
-    }
-    if (normalized.includes('dang nhap') || normalized.includes('login')) {
-      if (!session) {
-        push('login', {
-          label: 'Đăng nhập',
-          icon: '🔑',
-          onClick: () => { setOpen(false); void navigate('/client/login'); },
-        });
-      }
-    }
-    if (normalized.includes('nhan vien') || normalized.includes('staff') || normalized.includes('cskh')) {
-      push('support', {
-        label: 'Chuyển nhân viên',
-        icon: '👤',
-        onClick: () => setActiveTab('support'),
-      });
-    }
-    if (normalized.includes('dia chi') || normalized.includes('giao hang den')) {
-      if (session) {
-        push('address', {
-          label: 'Quản lý địa chỉ',
-          icon: '📍',
-          onClick: () => { setOpen(false); void navigate('/client/account/addresses'); },
-        });
-      }
+  const handleBotAction = (action: SupportBotAction) => {
+    if (action.type === 'switch_tab') {
+      setActiveTab('support');
+      return;
     }
 
-    return actions.slice(0, 3); // tối đa 3 chip / message
+    if (action.type === 'send_message') {
+      handleSendBotMessage(action.target);
+      return;
+    }
+
+    if (action.type === 'login') {
+      setOpen(false);
+      void navigate('/client/login', {
+        state: { from: `${location.pathname}${location.search}` },
+      });
+      return;
+    }
+
+    if (action.type === 'view_product') {
+      handleViewProduct(action.target);
+      return;
+    }
+
+    if (action.type === 'add_to_cart') {
+      const product = botMessages
+        .flatMap((message) => message.products ?? [])
+        .find((item) => item.productId === action.target);
+
+      if (product) {
+        void handleAddProductToCart(product.productId, product.productName);
+      }
+      return;
+    }
+
+    setOpen(false);
+    void navigate(action.target);
   };
+
+  const renderBotText = (text: string) => (
+    <div className="space-y-1">
+      {text.split('\n').map((line, index) => {
+        const trimmed = line.trim();
+
+        if (!trimmed) {
+          return <div key={`gap-${index}`} className="h-1" />;
+        }
+
+        const withoutMarkdown = trimmed.replace(/\*\*/g, '');
+        const isBullet = /^[-•]\s+/.test(withoutMarkdown);
+        const content = withoutMarkdown.replace(/^[-•]\s+/, '');
+        const isHeading = index === 0 && content.length <= 72;
+
+        if (isBullet) {
+          return (
+            <p key={`${content}-${index}`} className="flex gap-1.5">
+              <span className="mt-[0.55em] h-1 w-1 shrink-0 rounded-full bg-[#006241]/70" />
+              <span>{content}</span>
+            </p>
+          );
+        }
+
+        return (
+          <p
+            key={`${content}-${index}`}
+            className={isHeading ? 'font-black text-[#1E3932]' : undefined}
+          >
+            {content}
+          </p>
+        );
+      })}
+    </div>
+  );
 
   useEffect(() => {
     openRef.current = open;
@@ -822,7 +865,7 @@ export default function Chatbox() {
   function handleSendBotMessage(rawText: string) {
     const text = rawText.trim();
 
-    if (!text) {
+    if (!text || botTyping) {
       return;
     }
 
@@ -861,6 +904,9 @@ export default function Chatbox() {
             from: 'bot',
             text: response.reply,
             products: response.products ?? [],
+            actions: response.actions ?? [],
+            suggestedQuestions: response.suggestedQuestions ?? [],
+            severity: response.severity ?? 'info',
           };
           setBotMessages((current) => [...current, reply]);
 
@@ -868,11 +914,20 @@ export default function Chatbox() {
             setBotUnreadCount((current) => current + 1);
           }
         } catch {
-          const fallbackText = await getBotResponse(text);
           const fallbackReply: BotMessage = {
             id: botMessageIdCounter++,
             from: 'bot',
-            text: fallbackText,
+            text:
+              'Chatbot đang gặp lỗi kết nối.\n- Bạn có thể thử lại sau vài phút.\n- Nếu cần xử lý đơn hàng, hoàn tiền hoặc tư vấn kỹ thuật, hãy chuyển sang nhân viên.',
+            actions: [
+              {
+                type: 'switch_tab',
+                label: 'Gặp nhân viên',
+                target: 'support',
+              },
+            ],
+            suggestedQuestions: ['Chính sách giao hàng?', 'Đổi trả như thế nào?'],
+            severity: 'warning',
           };
           setBotMessages((current) => [...current, fallbackReply]);
 
@@ -952,8 +1007,8 @@ export default function Chatbox() {
 
       {open ? (
         <div
-          className="client-card fixed bottom-24 right-6 z-50 flex w-80 flex-col overflow-hidden sm:w-96"
-          style={{ height: '560px', maxHeight: 'calc(100vh - 120px)' }}
+          className="client-card fixed inset-x-2 bottom-20 z-50 flex flex-col overflow-hidden rounded-2xl sm:inset-x-auto sm:bottom-24 sm:right-6 sm:w-[420px]"
+          style={{ height: 'min(640px, calc(100vh - 88px))' }}
         >
           <div
             className="flex items-center justify-between px-4 py-3"
@@ -1051,7 +1106,7 @@ export default function Chatbox() {
                         }`}
                       >
                         <div
-                          className={`max-w-[78%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
+                          className={`max-w-[86%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
                             isUser
                               ? 'rounded-br-sm text-white'
                               : 'rounded-bl-sm text-[#1E3932]'
@@ -1062,18 +1117,36 @@ export default function Chatbox() {
                               : { background: '#f2f0eb' }
                           }
                         >
-                          <p className="whitespace-pre-line">{message.text}</p>
-                          {!isUser && getMessageActions(message.text).length > 0 ? (
+                          {isUser ? (
+                            <p className="whitespace-pre-line">{message.text}</p>
+                          ) : (
+                            renderBotText(message.text)
+                          )}
+                          {!isUser && message.actions?.length ? (
                             <div className="mt-2 flex flex-wrap gap-1.5">
-                              {getMessageActions(message.text).map((action) => (
+                              {message.actions.map((action) => (
                                 <button
-                                  key={action.label}
+                                  key={`${action.type}-${action.target}-${action.label}`}
                                   type="button"
-                                  onClick={action.onClick}
+                                  onClick={() => handleBotAction(action)}
                                   className="inline-flex items-center gap-1 rounded-full border border-[#006241]/20 bg-white px-2.5 py-1 text-[11px] font-bold text-[#006241] transition hover:bg-[#006241] hover:text-white"
                                 >
-                                  <span>{action.icon}</span>
                                   {action.label}
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
+                          {!isUser && message.suggestedQuestions?.length ? (
+                            <div className="mt-2 grid grid-cols-1 gap-1.5">
+                              {message.suggestedQuestions.slice(0, 3).map((question) => (
+                                <button
+                                  key={question}
+                                  type="button"
+                                  disabled={botTyping}
+                                  onClick={() => handleSendBotMessage(question)}
+                                  className="rounded-lg border border-[#006241]/15 bg-white px-2.5 py-1.5 text-left text-[11px] font-semibold text-[#006241] transition hover:bg-[#006241]/10 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  {question}
                                 </button>
                               ))}
                             </div>
@@ -1197,29 +1270,42 @@ export default function Chatbox() {
                 </div>
               </div>
 
-              {/* Quick questions grouped by topic, dạng accordion ngang */}
               <div className="border-t border-black/5 bg-white px-3 py-2">
-                <div className="space-y-1.5">
-                  {QUICK_QUESTION_GROUPS.map((group) => (
-                    <div key={group.title}>
-                      <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-[#006241]/70">
-                        {group.title}
-                      </p>
-                      <div className="flex gap-1.5 overflow-x-auto pb-0.5">
-                        {group.questions.map((question) => (
-                          <button
-                            key={question}
-                            type="button"
-                            onClick={() => handleSendBotMessage(question)}
-                            className="shrink-0 rounded-full border border-[#006241]/20 px-2.5 py-1 text-[11px] font-semibold text-[#006241] transition hover:bg-[#006241]/10"
-                          >
-                            {question}
-                          </button>
-                        ))}
+                <button
+                  type="button"
+                  onClick={() => setQuickPanelOpen((current) => !current)}
+                  className="flex w-full items-center justify-between rounded-lg px-1 py-1 text-xs font-black uppercase tracking-[0.08em] text-[#006241]"
+                >
+                  <span>Câu hỏi nhanh</span>
+                  <ChevronDown
+                    size={15}
+                    className={`transition ${quickPanelOpen ? 'rotate-180' : ''}`}
+                  />
+                </button>
+                {quickPanelOpen ? (
+                  <div className="mt-1 grid grid-cols-2 gap-2">
+                    {BUSINESS_QUICK_QUESTION_GROUPS.map((group) => (
+                      <div key={group.title} className="min-w-0">
+                        <p className="mb-1 truncate text-[10px] font-bold uppercase tracking-wider text-[#006241]/60">
+                          {group.title}
+                        </p>
+                        <div className="space-y-1">
+                          {group.questions.map((question) => (
+                            <button
+                              key={question}
+                              type="button"
+                              disabled={botTyping}
+                              onClick={() => handleSendBotMessage(question)}
+                              className="block w-full rounded-lg border border-[#006241]/15 bg-[#f8f7f3] px-2 py-1.5 text-left text-[11px] font-semibold leading-snug text-[#006241] transition hover:bg-[#d4e9e2] disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {question}
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                ) : null}
               </div>
 
               <form
@@ -1234,7 +1320,7 @@ export default function Chatbox() {
                 />
                 <button
                   type="submit"
-                  disabled={!botInput.trim()}
+                  disabled={!botInput.trim() || botTyping}
                   className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
                   style={{ background: '#006241' }}
                 >
