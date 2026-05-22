@@ -3,16 +3,36 @@ import { getClientSession, setClientSession, type ClientSession } from './client
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, '') ?? 'http://localhost:8000/api/v1';
 
-type ApiEnvelope<T> = { statusCode: number; message: string; data: T };
+type ApiEnvelope<T> = {
+  statusCode: number;
+  message: string | string[];
+  data: T;
+  error?: string;
+  path?: string;
+};
+export type ClientApiError = Error & {
+  statusCode?: number;
+  error?: string;
+  path?: string;
+};
 
 async function parseEnvelope<T>(response: Response): Promise<ApiEnvelope<T>> {
-  const payload = (await response.json()) as ApiEnvelope<T> | { message?: string };
+  const payload = (await response.json()) as ApiEnvelope<T> | {
+    message?: string | string[];
+    error?: string;
+    statusCode?: number;
+    path?: string;
+  };
   if (!response.ok) {
     const message =
       'message' in payload && payload.message
         ? payload.message
         : `Request failed with ${response.status}`;
-    throw new Error(Array.isArray(message) ? message[0] : message);
+    const error = new Error(Array.isArray(message) ? message[0] : message) as ClientApiError;
+    error.statusCode = payload.statusCode ?? response.status;
+    error.error = payload.error;
+    error.path = payload.path;
+    throw error;
   }
   return payload as ApiEnvelope<T>;
 }

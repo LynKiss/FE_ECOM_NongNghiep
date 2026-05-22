@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
+  AlertTriangle,
   ArrowRight,
   BadgePercent,
   CheckCircle2,
@@ -14,7 +15,7 @@ import {
   TicketPercent,
   Trash2,
 } from 'lucide-react';
-import { useCart } from '../../hooks/useCart';
+import { type CartItem, useCart } from '../../hooks/useCart';
 import { useClientSession } from '../../hooks/useClientSession';
 import {
   type DiscountResult,
@@ -37,6 +38,19 @@ function formatPrice(price: number) {
     style: 'currency',
     currency: 'VND',
   }).format(price);
+}
+
+function cartIssueMessage(item: CartItem) {
+  if (item.isUnavailable || item.stockIssue === 'unavailable') {
+    return 'Sản phẩm đã ngừng bán, vui lòng bỏ khỏi giỏ hàng.';
+  }
+  if (item.stockIssue === 'out_of_stock') {
+    return 'Sản phẩm hiện đã hết hàng.';
+  }
+  if (item.stockIssue === 'insufficient_stock') {
+    return `Chỉ còn ${item.availableQuantity ?? 0} sản phẩm, vui lòng giảm số lượng.`;
+  }
+  return '';
 }
 
 export default function Cart() {
@@ -64,6 +78,12 @@ export default function Cart() {
     : 0;
   const shipping = subtotal >= 500000 ? 0 : 30000;
   const total = Math.max(0, subtotal - discountAmount) + shipping;
+  const hasBlockedItems = Boolean(
+    cart?.items.some((item) => item.isUnavailable || item.stockIssue),
+  );
+  const hasPriceChanges = Boolean(
+    cart?.items.some((item) => item.priceChanged),
+  );
 
   const sortedVouchers = useMemo(() => sortVouchers(vouchers), [vouchers]);
   const bestVoucher = sortedVouchers.find(
@@ -157,6 +177,7 @@ export default function Cart() {
 
   const handleCheckout = () => {
     if (!cart || cart.totalItems === 0) return;
+    if (hasBlockedItems) return;
     void navigate('/client/checkout', {
       state: {
         discountCode: discountResult?.code,
@@ -249,6 +270,24 @@ export default function Cart() {
         ) : (
           <div className="grid gap-6 lg:grid-cols-[1fr_390px]">
             <div className="space-y-3">
+              {hasBlockedItems || hasPriceChanges ? (
+                <div className="rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-900">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle size={18} className="mt-0.5 shrink-0" />
+                    <div>
+                      <p className="font-black">
+                        Giỏ hàng cần kiểm tra lại trước khi đặt hàng
+                      </p>
+                      <p className="mt-1 text-xs font-semibold text-orange-800/80">
+                        {hasBlockedItems
+                          ? 'Một số sản phẩm đã hết hàng, ngừng bán hoặc vượt tồn kho.'
+                          : 'Một số sản phẩm đã được cập nhật giá mới. Tổng tiền đang tính theo giá hiện tại.'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
               {cart.items.map((item) => (
                 <div
                   key={item.id}
@@ -281,6 +320,17 @@ export default function Cart() {
                     <p className="mt-1 text-xs text-gray-400">
                       Đơn giá: {formatPrice(Number(item.unitPrice))}
                     </p>
+                    {item.priceChanged ? (
+                      <p className="mt-1 text-xs font-semibold text-orange-600">
+                        Giá đã cập nhật từ {formatPrice(Number(item.priceAtAdded))} sang{' '}
+                        {formatPrice(Number(item.unitPrice))}.
+                      </p>
+                    ) : null}
+                    {cartIssueMessage(item) ? (
+                      <p className="mt-1 text-xs font-semibold text-red-500">
+                        {cartIssueMessage(item)}
+                      </p>
+                    ) : null}
 
                     <div className="mt-3 flex items-center justify-between gap-3">
                       <div className="flex items-center gap-2">
@@ -506,9 +556,10 @@ export default function Cart() {
                 </div>
                 <button
                   onClick={handleCheckout}
-                  className="client-pill-primary mt-5 flex w-full items-center justify-center gap-2 py-3.5 text-sm font-bold"
+                  disabled={hasBlockedItems}
+                  className="client-pill-primary mt-5 flex w-full items-center justify-center gap-2 py-3.5 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  Tiến hành đặt hàng <ArrowRight size={16} />
+                  {hasBlockedItems ? 'Cần cập nhật giỏ hàng' : 'Tiến hành đặt hàng'} <ArrowRight size={16} />
                 </button>
                 <p className="mt-3 text-center text-[11px] text-gray-400">
                   Thanh toán bảo mật · Đổi trả 7 ngày

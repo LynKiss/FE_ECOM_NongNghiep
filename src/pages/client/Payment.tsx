@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
+  AlertTriangle,
   ArrowLeft,
   Banknote,
   CheckCircle2,
@@ -20,7 +21,7 @@ import {
   PublicCommerceSettings,
   PublicPaymentSettings,
 } from '../../lib/commerce-settings';
-import { clientApi } from '../../lib/client-api';
+import { clientApi, type ClientApiError } from '../../lib/client-api';
 import { clearGuestCart, refreshGlobalCart, useCart } from '../../hooks/useCart';
 import { useClientSession } from '../../hooks/useClientSession';
 
@@ -121,6 +122,15 @@ function formatPrice(price: number) {
   }).format(price);
 }
 
+function isCartChangedError(error: unknown) {
+  const apiError = error as ClientApiError;
+  return (
+    apiError?.error === 'CART_CHANGED' ||
+    apiError?.statusCode === 409 ||
+    (error instanceof Error && error.message.includes('Giỏ hàng đã thay đổi'))
+  );
+}
+
 function mergePublicPaymentSettings(
   settings?: Partial<PublicPaymentSettings> | null,
 ): PublicPaymentSettings {
@@ -138,7 +148,7 @@ export default function Payment() {
   const navigate = useNavigate();
   const location = useLocation();
   const { session } = useClientSession();
-  const { cart } = useCart();
+  const { cart, fetchCart } = useCart();
   const state = (location.state as LocationState) || {};
 
   const [method, setMethod] = useState<PaymentMethodKey | 'credit'>('cod');
@@ -172,6 +182,10 @@ export default function Payment() {
   const [simCountdown, setSimCountdown] = useState(600);
   const [simConfirming, setSimConfirming] = useState(false);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    void fetchCart();
+  }, [fetchCart]);
 
   useEffect(() => {
     let cancelled = false;
@@ -265,6 +279,12 @@ export default function Payment() {
   const discountAmount = state.discountAmount ?? 0;
   const shipping = state.shippingCost ?? 0;
   const total = state.total ?? subtotal - discountAmount + shipping;
+  const hasBlockedItems = Boolean(
+    cart?.items.some((item) => item.isUnavailable || item.stockIssue),
+  );
+  const hasPriceChanges = Boolean(
+    cart?.items.some((item) => item.priceChanged),
+  );
 
   const handleConfirmSimPayment = async () => {
     if (!simOrderId || !simRef) {
@@ -309,6 +329,25 @@ export default function Payment() {
     setPlacing(true);
     try {
       let order: CreateOrderResponse;
+      const latestCart = isGuest ? cart : await fetchCart();
+
+      if (!isGuest) {
+        if (!latestCart?.items.length) {
+          alert('Giỏ hàng trống hoặc đã thay đổi. Vui lòng kiểm tra lại.');
+          void navigate('/client/cart');
+          return;
+        }
+        if (latestCart.validationStatus === 'blocked') {
+          alert('Có sản phẩm hết hàng, ngừng bán hoặc vượt tồn kho. Vui lòng cập nhật giỏ hàng trước khi đặt.');
+          void navigate('/client/cart');
+          return;
+        }
+        if (Math.abs(Number(latestCart.totalAmount) - subtotal) > 0.01) {
+          alert('Tổng tiền giỏ hàng đã thay đổi. Vui lòng kiểm tra lại trước khi đặt.');
+          void navigate('/client/cart');
+          return;
+        }
+      }
 
       if (isGuest) {
         if (!cart?.items.length || !state.guestShipping) {
@@ -376,6 +415,7 @@ export default function Payment() {
           paymentMethod: method,
           note: state.note || undefined,
           discountCode: state.discountCode || undefined,
+          cartHash: latestCart?.cartHash ?? cart?.cartHash,
         },
         { 'X-Idempotency-Key': idempotencyKeyRef.current },
       );
@@ -417,6 +457,12 @@ export default function Payment() {
         });
       }
     } catch (error) {
+      if (isCartChangedError(error)) {
+        await fetchCart();
+        alert('Giỏ hàng đã thay đổi về giá hoặc tồn kho. Vui lòng kiểm tra lại trước khi đặt hàng.');
+        void navigate('/client/cart');
+        return;
+      }
       alert(
         error instanceof Error
           ? error.message
@@ -813,6 +859,17 @@ export default function Payment() {
                 </p>
               </div>
 
+              {hasBlockedItems || hasPriceChanges ? (
+                <div className="mt-4 flex items-start gap-3 rounded-2xl border border-orange-200 bg-orange-50 p-4 text-sm text-orange-900">
+                  <AlertTriangle size={18} className="mt-0.5 shrink-0" />
+                  <p>
+                    {hasBlockedItems
+                      ? 'Giỏ hàng có sản phẩm hết hàng, ngừng bán hoặc vượt tồn kho. Vui lòng quay lại giỏ hàng.'
+                      : 'Giỏ hàng có sản phẩm vừa cập nhật giá. Hệ thống sẽ kiểm tra lại trước khi tạo đơn.'}
+                  </p>
+                </div>
+              ) : null}
+
               <div className="mt-4 flex gap-3">
                 <Link
                   to="/client/checkout"
@@ -824,6 +881,7 @@ export default function Payment() {
                   onClick={() => void handlePlaceOrder()}
                   disabled={
                     placing ||
+                    hasBlockedItems ||
                     loadingSettings ||
                     (!availableMethods.length && !isCreditAvailable) ||
                     (method === 'credit' && creditLimit !== null && total > creditLimit.availableCredit)

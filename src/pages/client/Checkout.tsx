@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
-import { MapPin, Plus, Check, ChevronRight, ArrowLeft, Leaf, Truck, BadgePercent, CheckCircle2, Tag } from 'lucide-react';
+import { AlertTriangle, MapPin, Plus, Check, ChevronRight, ArrowLeft, Leaf, Truck, BadgePercent, CheckCircle2, Tag } from 'lucide-react';
 
 const VIETNAM_PROVINCES = [
   'An Giang','Bà Rịa - Vũng Tàu','Bắc Giang','Bắc Kạn','Bạc Liêu','Bắc Ninh','Bến Tre','Bình Định','Bình Dương','Bình Phước',
@@ -58,7 +58,7 @@ export default function Checkout() {
   const navigate = useNavigate();
   const location = useLocation();
   const { session } = useClientSession();
-  const { cart } = useCart();
+  const { cart, fetchCart } = useCart();
 
   const state = (location.state as { discountCode?: string; discountAmount?: number } | null) ?? {};
   const [appliedDiscountCode, setAppliedDiscountCode] = useState(state.discountCode ?? '');
@@ -97,6 +97,10 @@ export default function Checkout() {
     district: '',
     province: '',
   });
+
+  useEffect(() => {
+    void fetchCart();
+  }, [fetchCart]);
 
   useEffect(() => {
     if (!session) {
@@ -195,6 +199,8 @@ export default function Checkout() {
   const selectedDelivery = deliveryMethods.find((d) => d.id === selectedDeliveryId);
   const shipping = selectedDelivery ? Number(selectedDelivery.basePrice) : 0;
   const total = Math.max(0, subtotal - appliedDiscountAmount) + shipping;
+  const hasBlockedItems = cart.items.some((item) => item.isUnavailable || item.stockIssue);
+  const hasPriceChanges = cart.items.some((item) => item.priceChanged);
 
   const handleSaveAddress = async () => {
     if (!form.recipientName || !form.phone || !form.addressLine || !form.province) return;
@@ -221,6 +227,7 @@ export default function Checkout() {
   };
 
   const handleContinue = () => {
+    if (hasBlockedItems) return;
     if (!selectedDeliveryId) return;
     if (!session) {
       if (!guestForm.recipientName || !guestForm.phone || !guestForm.addressLine || !guestForm.province) return;
@@ -298,6 +305,22 @@ export default function Checkout() {
 
         <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
           <div className="space-y-6">
+            {hasBlockedItems || hasPriceChanges ? (
+              <div className="rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-900">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle size={18} className="mt-0.5 shrink-0" />
+                  <div>
+                    <p className="font-black">Giỏ hàng vừa được kiểm tra lại</p>
+                    <p className="mt-1 text-xs font-semibold text-orange-800/80">
+                      {hasBlockedItems
+                        ? 'Có sản phẩm hết hàng, ngừng bán hoặc vượt tồn kho. Vui lòng quay lại giỏ hàng để xử lý.'
+                        : 'Một số sản phẩm có giá mới. Tổng tiền đang dùng giá hiện tại.'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
             {/* Addresses */}
             <div>
               <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-[#1E3932]">
@@ -524,7 +547,7 @@ export default function Checkout() {
               <button
                 onClick={handleContinue}
                 disabled={
-                !selectedDeliveryId || (session
+                hasBlockedItems || !selectedDeliveryId || (session
                   ? (!selectedAddressId || addingAddress)
                   : (!guestForm.recipientName || !guestForm.phone || !guestForm.addressLine || !guestForm.province))
               }

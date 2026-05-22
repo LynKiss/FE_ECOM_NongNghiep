@@ -9,6 +9,10 @@ export type CartItem = {
   primaryImageUrl: string | null;
   quantity: number;
   unitPrice: string;
+  priceAtAdded: string;
+  priceChanged: boolean;
+  isUnavailable: boolean;
+  stockIssue: 'unavailable' | 'out_of_stock' | 'insufficient_stock' | string | null;
   lineTotal: string;
   availableQuantity: number | null;
 };
@@ -19,6 +23,8 @@ export type Cart = {
   totalItems: number;
   totalQuantity: number;
   totalAmount: string;
+  cartHash: string;
+  validationStatus: 'ok' | 'needs_review' | 'blocked';
 };
 
 export type GuestItemMeta = {
@@ -42,9 +48,35 @@ function saveGuestItems(items: CartItem[]) {
 }
 
 function buildGuestCart(items: CartItem[]): Cart {
-  const totalAmount = items.reduce((s, i) => s + Number(i.lineTotal), 0);
-  const totalQuantity = items.reduce((s, i) => s + i.quantity, 0);
-  return { id: 'guest', items, totalItems: items.length, totalQuantity, totalAmount: String(totalAmount) };
+  const normalizedItems = items.map((item) => {
+    const unitPrice = String(item.unitPrice);
+    return {
+      ...item,
+      unitPrice,
+      priceAtAdded: item.priceAtAdded ?? unitPrice,
+      priceChanged: Boolean(item.priceChanged),
+      isUnavailable: Boolean(item.isUnavailable),
+      stockIssue: item.stockIssue ?? null,
+      lineTotal: String(Number(unitPrice) * item.quantity),
+    };
+  });
+  const totalAmount = normalizedItems.reduce((s, i) => s + Number(i.lineTotal), 0);
+  const totalQuantity = normalizedItems.reduce((s, i) => s + i.quantity, 0);
+  const hasBlockedItem = normalizedItems.some((item) => item.isUnavailable || item.stockIssue);
+  const hasPriceChange = normalizedItems.some((item) => item.priceChanged);
+  const cartHash = `guest:${normalizedItems
+    .map((item) => `${item.productId}:${item.quantity}:${item.unitPrice}`)
+    .sort()
+    .join('|')}`;
+  return {
+    id: 'guest',
+    items: normalizedItems,
+    totalItems: normalizedItems.length,
+    totalQuantity,
+    totalAmount: String(totalAmount),
+    cartHash,
+    validationStatus: hasBlockedItem ? 'blocked' : hasPriceChange ? 'needs_review' : 'ok',
+  };
 }
 
 let globalCartListeners = new Set<() => void>();
@@ -90,16 +122,18 @@ export function useCart() {
   const fetchCart = useCallback(async () => {
     if (!session) {
       syncGuestCart();
-      return;
+      return globalCart;
     }
     setLoading(true);
     try {
       const data = await clientApi.get<Cart>('/cart');
       globalCart = data;
       emitCartChange();
+      return data;
     } catch {
       globalCart = null;
       emitCartChange();
+      return null;
     } finally {
       setLoading(false);
     }
@@ -129,6 +163,10 @@ export function useCart() {
             primaryImageUrl: meta.primaryImageUrl,
             quantity,
             unitPrice: String(meta.unitPrice),
+            priceAtAdded: String(meta.unitPrice),
+            priceChanged: false,
+            isUnavailable: false,
+            stockIssue: null,
             lineTotal: String(meta.unitPrice * quantity),
             availableQuantity: meta.availableQuantity,
           });
