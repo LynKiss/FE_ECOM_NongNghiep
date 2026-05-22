@@ -44,14 +44,32 @@ type Address = {
 type DeliveryMethod = {
   id: string;
   name: string;
+  type: 'delivery' | 'pickup';
   description: string | null;
-  basePrice: string;
-  minOrderAmount: string;
+  basePrice: number;
+  minOrderAmount: number;
+  freeShippingThreshold: number | null;
+  etaMinDays: number | null;
+  etaMaxDays: number | null;
+  eligible: boolean;
+  shippingFee: number;
+  freeShippingApplied: boolean;
+  ineligibleReason: 'MIN_ORDER' | 'OUT_OF_AREA' | null;
   isDefault: boolean;
 };
 
 function formatPrice(price: number) {
   return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(price);
+}
+
+function deliveryMethodReason(method: DeliveryMethod) {
+  if (method.ineligibleReason === 'MIN_ORDER') {
+    return `Đơn cần đạt tối thiểu ${formatPrice(method.minOrderAmount)}.`;
+  }
+  if (method.ineligibleReason === 'OUT_OF_AREA') {
+    return 'Phương thức này chưa áp dụng cho khu vực đã chọn.';
+  }
+  return '';
 }
 
 export default function Checkout() {
@@ -73,6 +91,8 @@ export default function Checkout() {
   const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
   const [deliveryMethods, setDeliveryMethods] = useState<DeliveryMethod[]>([]);
   const [selectedDeliveryId, setSelectedDeliveryId] = useState<string | null>(null);
+  const [loadingDeliveryQuotes, setLoadingDeliveryQuotes] = useState(false);
+  const [deliveryQuoteError, setDeliveryQuoteError] = useState('');
   const [addingAddress, setAddingAddress] = useState(false);
   const [note, setNote] = useState('');
   const [loadingAddresses, setLoadingAddresses] = useState(true);
@@ -97,6 +117,10 @@ export default function Checkout() {
     district: '',
     province: '',
   });
+  const [pickupContact, setPickupContact] = useState({
+    recipientName: session?.user.fullName ?? session?.user.username ?? '',
+    phone: '',
+  });
 
   useEffect(() => {
     void fetchCart();
@@ -104,34 +128,19 @@ export default function Checkout() {
 
   useEffect(() => {
     if (!session) {
-      void clientApi.get<DeliveryMethod[]>('/delivery-methods').then((deliveries) => {
-        const list = deliveries ?? [];
-        setDeliveryMethods(list);
-        const def = list.find((d) => d.isDefault);
-        if (def) setSelectedDeliveryId(def.id);
-        else if (list[0]) setSelectedDeliveryId(list[0].id);
-      }).catch(() => {}).finally(() => setLoadingAddresses(false));
+      setLoadingAddresses(false);
       return;
     }
 
-    void Promise.all([
-      clientApi.get<Address[]>('/users/me/addresses'),
-      clientApi.get<DeliveryMethod[]>('/delivery-methods'),
-    ]).then(([addrs, deliveries]) => {
+    void clientApi.get<Address[]>('/users/me/addresses').then((addrs) => {
       const addrList = addrs ?? [];
-      const deliveryList = deliveries ?? [];
 
       setAddresses(addrList);
       const def = addrList.find((a) => a.isDefault);
       if (def) setSelectedAddressId(def.id);
       else if (addrList[0]) setSelectedAddressId(addrList[0].id);
-
-      setDeliveryMethods(deliveryList);
-      const defDelivery = deliveryList.find((d) => d.isDefault);
-      if (defDelivery) setSelectedDeliveryId(defDelivery.id);
-      else if (deliveryList[0]) setSelectedDeliveryId(deliveryList[0].id);
     }).catch(() => {}).finally(() => setLoadingAddresses(false));
-  }, [session, navigate]);
+  }, [session]);
 
   const subtotal = Number(cart?.totalAmount ?? 0);
   const productIds = useMemo(
@@ -140,6 +149,65 @@ export default function Checkout() {
   );
   const sortedVouchers = useMemo(() => sortVouchers(vouchers), [vouchers]);
   const quickVouchers = sortedVouchers.slice(0, 3);
+  const selectedAddress = addresses.find((address) => address.id === selectedAddressId);
+  const quoteLocation = session
+    ? {
+        province: selectedAddress?.province ?? '',
+        district: selectedAddress?.district ?? '',
+      }
+    : {
+        province: guestForm.province,
+        district: guestForm.district,
+      };
+
+  useEffect(() => {
+    if (!cart?.items.length) {
+      setDeliveryMethods([]);
+      return;
+    }
+
+    let cancelled = false;
+    setLoadingDeliveryQuotes(true);
+    setDeliveryQuoteError('');
+    void clientApi
+      .post<DeliveryMethod[]>('/delivery-methods/quote', {
+        subtotal,
+        province: quoteLocation.province || undefined,
+        district: quoteLocation.district || undefined,
+      })
+      .then((methods) => {
+        if (cancelled) return;
+        const list = methods ?? [];
+        setDeliveryMethods(list);
+        setSelectedDeliveryId((current) => {
+          if (current && list.some((method) => method.id === current && method.eligible)) {
+            return current;
+          }
+          return (
+            list.find((method) => method.isDefault && method.eligible)?.id ??
+            list.find((method) => method.eligible)?.id ??
+            null
+          );
+        });
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setDeliveryMethods([]);
+        setSelectedDeliveryId(null);
+        setDeliveryQuoteError(
+          error instanceof Error
+            ? error.message
+            : 'Không thể tính phương thức nhận hàng lúc này.',
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingDeliveryQuotes(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [cart?.items.length, subtotal, quoteLocation.province, quoteLocation.district]);
 
   useEffect(() => {
     if (!cart?.items.length) {
@@ -197,7 +265,8 @@ export default function Checkout() {
   if (!cart) return null;
 
   const selectedDelivery = deliveryMethods.find((d) => d.id === selectedDeliveryId);
-  const shipping = selectedDelivery ? Number(selectedDelivery.basePrice) : 0;
+  const isPickup = selectedDelivery?.type === 'pickup';
+  const shipping = selectedDelivery?.eligible ? selectedDelivery.shippingFee : 0;
   const total = Math.max(0, subtotal - appliedDiscountAmount) + shipping;
   const hasBlockedItems = cart.items.some((item) => item.isUnavailable || item.stockIssue);
   const hasPriceChanges = cart.items.some((item) => item.priceChanged);
@@ -228,12 +297,32 @@ export default function Checkout() {
 
   const handleContinue = () => {
     if (hasBlockedItems) return;
-    if (!selectedDeliveryId) return;
+    if (!selectedDeliveryId || !selectedDelivery?.eligible) return;
     if (!session) {
+      if (isPickup) {
+        if (!pickupContact.recipientName || !pickupContact.phone) return;
+        void navigate('/client/payment', {
+          state: {
+            fulfillmentType: 'pickup',
+            pickupContact,
+            deliveryId: selectedDeliveryId,
+            shippingAddress: `${pickupContact.recipientName}, ${pickupContact.phone}`,
+            deliveryName: selectedDelivery.name,
+            shippingCost: shipping,
+            note,
+            discountCode: appliedDiscountCode || undefined,
+            discountAmount: appliedDiscountAmount,
+            subtotal,
+            total,
+          },
+        });
+        return;
+      }
       if (!guestForm.recipientName || !guestForm.phone || !guestForm.addressLine || !guestForm.province) return;
       const addrText = [guestForm.recipientName, guestForm.phone, guestForm.addressLine, guestForm.ward, guestForm.district, guestForm.province].filter(Boolean).join(', ');
       void navigate('/client/payment', {
         state: {
+          fulfillmentType: 'delivery',
           guestShipping: {
             recipientName: guestForm.recipientName,
             phone: guestForm.phone,
@@ -256,6 +345,25 @@ export default function Checkout() {
       });
       return;
     }
+    if (isPickup) {
+      if (!pickupContact.recipientName || !pickupContact.phone) return;
+      void navigate('/client/payment', {
+        state: {
+          fulfillmentType: 'pickup',
+          pickupContact,
+          deliveryId: selectedDeliveryId,
+          shippingAddress: `${pickupContact.recipientName}, ${pickupContact.phone}`,
+          deliveryName: selectedDelivery.name,
+          shippingCost: shipping,
+          note,
+          discountCode: appliedDiscountCode || undefined,
+          discountAmount: appliedDiscountAmount,
+          subtotal,
+          total,
+        },
+      });
+      return;
+    }
     if (!selectedAddressId) return;
     const addr = addresses.find((a) => a.id === selectedAddressId);
     const addrText = addr
@@ -265,6 +373,7 @@ export default function Checkout() {
       : '';
     void navigate('/client/payment', {
       state: {
+        fulfillmentType: 'delivery',
         shippingAddressId: selectedAddressId,
         deliveryId: selectedDeliveryId,
         shippingAddress: addrText,
@@ -324,10 +433,39 @@ export default function Checkout() {
             {/* Addresses */}
             <div>
               <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-[#1E3932]">
-                <MapPin size={20} className="text-[#006241]" /> Địa chỉ giao hàng
+                <MapPin size={20} className="text-[#006241]" /> {isPickup ? 'Thông tin người nhận tại cửa hàng' : 'Địa chỉ giao hàng'}
               </h2>
 
-              {!session ? (
+              {isPickup ? (
+                <div className="client-card border-2 border-[#006241] p-5">
+                  <p className="mb-1 text-xs font-bold uppercase tracking-wider text-[#006241]">
+                    Nhận tại cửa hàng
+                  </p>
+                  <p className="mb-4 text-xs text-gray-500">
+                    Cửa hàng dùng thông tin này để xác nhận người đến nhận đơn.
+                  </p>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-gray-500">Họ và tên *</label>
+                      <input
+                        value={pickupContact.recipientName}
+                        onChange={(event) => setPickupContact((current) => ({ ...current, recipientName: event.target.value }))}
+                        placeholder="Nguyễn Văn A"
+                        className="client-input w-full px-4 py-2.5 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-gray-500">Số điện thoại *</label>
+                      <input
+                        value={pickupContact.phone}
+                        onChange={(event) => setPickupContact((current) => ({ ...current, phone: event.target.value }))}
+                        placeholder="0901234567"
+                        className="client-input w-full px-4 py-2.5 text-sm"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : !session ? (
                 <div className="client-card border-2 border-[#006241] p-5">
                   <p className="mb-1 text-xs font-bold uppercase tracking-wider text-[#006241]">Đặt hàng với tư cách khách</p>
                   <p className="mb-4 text-xs text-gray-400">Thông tin giao hàng của bạn</p>
@@ -476,52 +614,100 @@ export default function Checkout() {
             </div>
 
             {/* Delivery methods */}
-            {deliveryMethods.length > 0 && (
-              <div>
-                <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-[#1E3932]">
-                  <Truck size={20} className="text-[#006241]" /> Phương thức vận chuyển
-                </h2>
+            <div>
+              <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-[#1E3932]">
+                <Truck size={20} className="text-[#006241]" /> Phương thức nhận hàng
+              </h2>
+              {loadingDeliveryQuotes ? (
+                <div className="client-card flex justify-center py-8">
+                  <div className="h-6 w-6 animate-spin rounded-full border-2 border-[#006241] border-t-transparent" />
+                </div>
+              ) : deliveryQuoteError ? (
+                <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
+                  {deliveryQuoteError}
+                </div>
+              ) : deliveryMethods.length === 0 ? (
+                <div className="client-card p-4 text-sm text-gray-500">
+                  Chưa có phương thức nhận hàng phù hợp. Vui lòng kiểm tra lại địa chỉ hoặc liên hệ cửa hàng.
+                </div>
+              ) : (
                 <div className="space-y-3">
-                  {deliveryMethods.map((dm) => (
-                    <button
-                      key={dm.id}
-                      onClick={() => setSelectedDeliveryId(dm.id)}
-                      className={`w-full rounded-xl border-2 p-4 text-left transition ${
-                        selectedDeliveryId === dm.id
-                          ? 'border-[#006241] bg-[#006241]/5'
-                          : 'border-transparent bg-white hover:border-[#006241]/30'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="font-bold text-[#1E3932]">{dm.name}</p>
-                          {dm.description && (
-                            <p className="mt-0.5 text-xs text-gray-500">{dm.description}</p>
-                          )}
-                          {Number(dm.minOrderAmount) > 0 && (
-                            <p className="mt-0.5 text-[10px] text-orange-500">
-                              Đơn tối thiểu {formatPrice(Number(dm.minOrderAmount))}
-                            </p>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <span className={`font-black text-sm ${Number(dm.basePrice) === 0 ? 'text-[#006241]' : 'text-[#1E3932]'}`}>
-                            {Number(dm.basePrice) === 0 ? 'Miễn phí' : formatPrice(Number(dm.basePrice))}
-                          </span>
-                          <div
-                            className={`flex h-5 w-5 items-center justify-center rounded-full border-2 transition ${
-                              selectedDeliveryId === dm.id ? 'border-[#006241] bg-[#006241]' : 'border-gray-300'
-                            }`}
-                          >
-                            {selectedDeliveryId === dm.id && <div className="h-2 w-2 rounded-full bg-white" />}
+                  {deliveryMethods.map((dm) => {
+                    const reason = deliveryMethodReason(dm);
+                    const eta =
+                      dm.etaMinDays != null && dm.etaMaxDays != null
+                        ? `${dm.etaMinDays}-${dm.etaMaxDays} ngày`
+                        : null;
+                    return (
+                      <button
+                        key={dm.id}
+                        type="button"
+                        onClick={() => dm.eligible && setSelectedDeliveryId(dm.id)}
+                        disabled={!dm.eligible}
+                        className={`w-full rounded-xl border-2 p-4 text-left transition ${
+                          !dm.eligible
+                            ? 'cursor-not-allowed border-transparent bg-white/65 opacity-75'
+                            : selectedDeliveryId === dm.id
+                              ? 'border-[#006241] bg-[#006241]/5'
+                              : 'border-transparent bg-white hover:border-[#006241]/30'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="font-bold text-[#1E3932]">{dm.name}</p>
+                              <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${
+                                dm.type === 'pickup'
+                                  ? 'bg-amber-100 text-amber-700'
+                                  : 'bg-[#d4e9e2] text-[#006241]'
+                              }`}>
+                                {dm.type === 'pickup' ? 'Nhận tại cửa hàng' : 'Giao hàng'}
+                              </span>
+                            </div>
+                            {dm.description && (
+                              <p className="mt-1 text-xs text-gray-500">{dm.description}</p>
+                            )}
+                            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-semibold text-gray-500">
+                              {eta ? <span>Dự kiến {eta}</span> : null}
+                              {dm.freeShippingThreshold ? (
+                                <span>Miễn phí từ {formatPrice(dm.freeShippingThreshold)}</span>
+                              ) : null}
+                              {dm.minOrderAmount > 0 ? (
+                                <span>Đơn tối thiểu {formatPrice(dm.minOrderAmount)}</span>
+                              ) : null}
+                            </div>
+                            {reason ? (
+                              <p className="mt-1 text-xs font-bold text-orange-600">{reason}</p>
+                            ) : null}
+                          </div>
+                          <div className="flex shrink-0 items-center gap-3">
+                            <div className="text-right">
+                              <span className={`block text-sm font-black ${
+                                dm.shippingFee === 0 ? 'text-[#006241]' : 'text-[#1E3932]'
+                              }`}>
+                                {dm.shippingFee === 0 ? 'Miễn phí' : formatPrice(dm.shippingFee)}
+                              </span>
+                              {dm.freeShippingApplied ? (
+                                <span className="text-[10px] font-black text-[#006241]">Đã áp dụng</span>
+                              ) : null}
+                            </div>
+                            <div
+                              className={`flex h-5 w-5 items-center justify-center rounded-full border-2 transition ${
+                                selectedDeliveryId === dm.id
+                                  ? 'border-[#006241] bg-[#006241]'
+                                  : 'border-gray-300'
+                              }`}
+                            >
+                              {selectedDeliveryId === dm.id && <div className="h-2 w-2 rounded-full bg-white" />}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </button>
-                  ))}
+                      </button>
+                    );
+                  })}
                 </div>
-              </div>
-            )}
+              )}
+            </div>
 
             {/* Note */}
             <div>
@@ -547,9 +733,15 @@ export default function Checkout() {
               <button
                 onClick={handleContinue}
                 disabled={
-                hasBlockedItems || !selectedDeliveryId || (session
-                  ? (!selectedAddressId || addingAddress)
-                  : (!guestForm.recipientName || !guestForm.phone || !guestForm.addressLine || !guestForm.province))
+                hasBlockedItems ||
+                !selectedDeliveryId ||
+                !selectedDelivery?.eligible ||
+                loadingDeliveryQuotes ||
+                (isPickup
+                  ? (!pickupContact.recipientName || !pickupContact.phone)
+                  : session
+                    ? (!selectedAddressId || addingAddress)
+                    : (!guestForm.recipientName || !guestForm.phone || !guestForm.addressLine || !guestForm.province))
               }
                 className="client-pill-primary flex flex-1 items-center justify-center gap-2 py-3 text-sm font-bold disabled:opacity-50"
               >

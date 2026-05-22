@@ -35,9 +35,16 @@ type GuestShipping = {
   province: string;
 };
 
+type PickupContact = {
+  recipientName: string;
+  phone: string;
+};
+
 type LocationState = {
+  fulfillmentType?: 'delivery' | 'pickup';
   shippingAddressId?: string;
   guestShipping?: GuestShipping;
+  pickupContact?: PickupContact;
   deliveryId?: string;
   shippingAddress?: string;
   deliveryName?: string;
@@ -270,7 +277,14 @@ export default function Payment() {
 
   const isGuest = !session;
 
-  if (!state.deliveryId || (!state.shippingAddressId && !state.guestShipping)) {
+  const isPickup = state.fulfillmentType === 'pickup';
+
+  if (
+    !state.deliveryId ||
+    (isPickup
+      ? !state.pickupContact
+      : !state.shippingAddressId && !state.guestShipping)
+  ) {
     void navigate('/client/checkout');
     return null;
   }
@@ -350,14 +364,19 @@ export default function Payment() {
       }
 
       if (isGuest) {
-        if (!cart?.items.length || !state.guestShipping) {
-          alert('Giỏ hàng trống hoặc thiếu thông tin giao hàng.');
+        if (
+          !cart?.items.length ||
+          (isPickup ? !state.pickupContact : !state.guestShipping)
+        ) {
+          alert('Giỏ hàng trống hoặc thiếu thông tin nhận hàng.');
           return;
         }
         order = await clientApi.post<CreateOrderResponse>(
           '/orders/guest',
           {
-            shipping: state.guestShipping,
+            ...(isPickup
+              ? { pickupContact: state.pickupContact }
+              : { shipping: state.guestShipping }),
             deliveryId: state.deliveryId,
             paymentMethod: method,
             note: state.note || undefined,
@@ -381,7 +400,9 @@ export default function Payment() {
               paymentUrl: string;
             }>(`/payments/guest/orders/${order.id}/initiate`, {
               returnUrl,
-              phone: state.guestShipping.phone,
+              phone: isPickup
+                ? state.pickupContact?.phone
+                : state.guestShipping?.phone,
             });
 
             if (
@@ -410,7 +431,9 @@ export default function Payment() {
       order = await clientApi.post<CreateOrderResponse>(
         '/orders',
         {
-          shippingAddressId: state.shippingAddressId,
+          ...(isPickup
+            ? { pickupContact: state.pickupContact }
+            : { shippingAddressId: state.shippingAddressId }),
           deliveryId: state.deliveryId,
           paymentMethod: method,
           note: state.note || undefined,
@@ -566,8 +589,9 @@ export default function Payment() {
             )}
 
             <p className="mt-3 text-xs text-gray-400">
-              Đơn hàng sẽ được giao trong 2-4 ngày làm việc. Bạn có thể theo dõi
-              trong mục đơn hàng.
+              {isPickup
+                ? 'Cửa hàng sẽ xử lý đơn và liên hệ khi đơn sẵn sàng để nhận.'
+                : 'Đơn hàng sẽ được giao theo phương thức đã chọn. Bạn có thể theo dõi trong mục đơn hàng.'}
             </p>
           </div>
 
@@ -820,7 +844,7 @@ export default function Payment() {
                       />
                       <div>
                         <p className="text-xs font-bold uppercase tracking-wider text-gray-400">
-                          Địa chỉ nhận hàng
+                          {isPickup ? 'Người nhận tại cửa hàng' : 'Địa chỉ nhận hàng'}
                         </p>
                         <p className="text-sm text-[#1E3932]">
                           {state.shippingAddress}
@@ -837,7 +861,7 @@ export default function Payment() {
                       />
                       <div>
                         <p className="text-xs font-bold uppercase tracking-wider text-gray-400">
-                          Phương thức vận chuyển
+                          {isPickup ? 'Phương thức nhận hàng' : 'Phương thức vận chuyển'}
                         </p>
                         <p className="text-sm text-[#1E3932]">
                           {state.deliveryName}

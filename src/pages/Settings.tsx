@@ -149,33 +149,77 @@ type SocialLinks = {
 type DeliveryMethod = {
   id: string;
   name: string;
+  type: 'delivery' | 'pickup';
   description: string | null;
   basePrice: number;
   minOrderAmount: number;
+  freeShippingThreshold: number | null;
+  etaMinDays: number | null;
+  etaMaxDays: number | null;
+  region: string | null;
+  areas: Array<{ id: string; province: string; district: string | null }>;
   isDefault: boolean;
   isActive: boolean;
 };
 
 type DeliveryMethodForm = {
   name: string;
+  type: 'delivery' | 'pickup';
   description: string;
   basePrice: string;
   minOrderAmount: string;
+  freeShippingThreshold: string;
+  etaMinDays: string;
+  etaMaxDays: string;
+  region: string;
+  areasText: string;
   isDefault: boolean;
   isActive: boolean;
 };
 
 const defaultDeliveryForm: DeliveryMethodForm = {
   name: '',
+  type: 'delivery',
   description: '',
   basePrice: '0',
   minOrderAmount: '0',
+  freeShippingThreshold: '',
+  etaMinDays: '',
+  etaMaxDays: '',
+  region: '',
+  areasText: '',
   isDefault: false,
   isActive: true,
 };
 
 function formatPrice(v: number) {
   return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(v);
+}
+
+function deliveryAreasLabel(method: DeliveryMethod) {
+  if (method.type === 'pickup') return 'Tại cửa hàng';
+  if (!method.areas.length) return 'Toàn quốc';
+  return method.areas
+    .map((area) => area.district ? `${area.district}, ${area.province}` : area.province)
+    .join('; ');
+}
+
+function deliveryAreasText(method: DeliveryMethod) {
+  return method.areas
+    .map((area) => area.district ? `${area.province} | ${area.district}` : area.province)
+    .join('\n');
+}
+
+function parseDeliveryAreas(text: string) {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [province, district] = line.split('|').map((value) => value.trim());
+      return { province, district: district || undefined };
+    })
+    .filter((area) => area.province);
 }
 
 // ── General Tab ──────────────────────────────────────────────────────────────
@@ -310,9 +354,15 @@ function ShippingTab() {
     setEditingId(m.id);
     setForm({
       name: m.name,
+      type: m.type,
       description: m.description ?? '',
       basePrice: String(m.basePrice),
       minOrderAmount: String(m.minOrderAmount),
+      freeShippingThreshold: m.freeShippingThreshold == null ? '' : String(m.freeShippingThreshold),
+      etaMinDays: m.etaMinDays == null ? '' : String(m.etaMinDays),
+      etaMaxDays: m.etaMaxDays == null ? '' : String(m.etaMaxDays),
+      region: m.region ?? '',
+      areasText: deliveryAreasText(m),
       isDefault: m.isDefault,
       isActive: m.isActive,
     });
@@ -329,17 +379,32 @@ function ShippingTab() {
       const body = {
         name: form.name.trim(),
         description: form.description.trim() || null,
-        basePrice: Number(form.basePrice),
+        isPickup: form.type === 'pickup',
+        basePrice: form.type === 'pickup' ? 0 : Number(form.basePrice),
         minOrderAmount: Number(form.minOrderAmount),
-        isDefault: form.isDefault,
+        freeShippingThreshold:
+          form.type === 'pickup' || !form.freeShippingThreshold
+            ? null
+            : Number(form.freeShippingThreshold),
+        etaMinDays:
+          form.type === 'pickup' || !form.etaMinDays
+            ? null
+            : Number(form.etaMinDays),
+        etaMaxDays:
+          form.type === 'pickup' || !form.etaMaxDays
+            ? null
+            : Number(form.etaMaxDays),
+        region: form.region.trim() || null,
+        areas: form.type === 'pickup' ? [] : parseDeliveryAreas(form.areasText),
+        isDefault: form.type === 'pickup' ? false : form.isDefault,
         isActive: form.isActive,
       };
       if (editingId) {
         await apiClient.patch(`/delivery-methods/${editingId}`, body);
-        showToast({ tone: 'success', title: 'Đã cập nhật phương thức giao hàng' });
+        showToast({ tone: 'success', title: 'Đã cập nhật phương thức nhận hàng' });
       } else {
         await apiClient.post('/delivery-methods', body);
-        showToast({ tone: 'success', title: 'Đã thêm phương thức giao hàng' });
+        showToast({ tone: 'success', title: 'Đã thêm phương thức nhận hàng' });
       }
       setModalOpen(false);
       void loadMethods();
@@ -351,11 +416,16 @@ function ShippingTab() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Xác nhận xoá phương thức giao hàng này?')) return;
+    if (!confirm('Xác nhận xoá phương thức nhận hàng này?')) return;
     setDeletingId(id);
     try {
-      await apiClient.delete(`/delivery-methods/${id}`);
-      showToast({ tone: 'success', title: 'Đã xoá phương thức giao hàng' });
+      const result = await apiClient.delete<{ deleted?: boolean; deactivated?: boolean }>(`/delivery-methods/${id}`);
+      showToast({
+        tone: 'success',
+        title: result.deactivated
+          ? 'Phương thức đã phát sinh đơn, hệ thống đã ngừng hoạt động'
+          : 'Đã xóa phương thức nhận hàng',
+      });
       void loadMethods();
     } catch (err) {
       showToast({ tone: 'error', title: err instanceof Error ? err.message : 'Xoá thất bại' });
@@ -368,8 +438,8 @@ function ShippingTab() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-black text-on-surface">Phương thức giao hàng</h2>
-          <p className="mt-1 text-sm text-on-surface-variant">Quản lý các đơn vị vận chuyển và cước phí.</p>
+          <h2 className="text-xl font-black text-on-surface">Phương thức nhận hàng</h2>
+          <p className="mt-1 text-sm text-on-surface-variant">Quản lý giao hàng, nhận tại cửa hàng, khu vực áp dụng và cước phí.</p>
         </div>
         <button
           onClick={openCreate}
@@ -386,7 +456,7 @@ function ShippingTab() {
       ) : methods.length === 0 ? (
         <div className="rounded-xl border border-dashed border-on-surface-variant/20 p-12 text-center">
           <Truck size={36} className="mx-auto mb-3 text-on-surface-variant/30" />
-          <p className="text-sm text-on-surface-variant">Chưa có phương thức giao hàng nào.</p>
+          <p className="text-sm text-on-surface-variant">Chưa có phương thức nhận hàng nào.</p>
         </div>
       ) : (
         <div className="overflow-hidden rounded-xl border border-on-surface-variant/10 bg-white">
@@ -394,8 +464,11 @@ function ShippingTab() {
             <thead>
               <tr className="border-b border-on-surface-variant/8 bg-on-surface-variant/3">
                 <th className="px-5 py-3.5 text-left text-xs font-bold uppercase tracking-wider text-on-surface-variant">Tên</th>
+                <th className="px-5 py-3.5 text-left text-xs font-bold uppercase tracking-wider text-on-surface-variant">Loại</th>
+                <th className="px-5 py-3.5 text-left text-xs font-bold uppercase tracking-wider text-on-surface-variant">Khu vực</th>
                 <th className="px-5 py-3.5 text-left text-xs font-bold uppercase tracking-wider text-on-surface-variant">Cước phí</th>
-                <th className="px-5 py-3.5 text-left text-xs font-bold uppercase tracking-wider text-on-surface-variant">Đơn tối thiểu</th>
+                <th className="px-5 py-3.5 text-left text-xs font-bold uppercase tracking-wider text-on-surface-variant">Điều kiện</th>
+                <th className="px-5 py-3.5 text-left text-xs font-bold uppercase tracking-wider text-on-surface-variant">ETA</th>
                 <th className="px-5 py-3.5 text-center text-xs font-bold uppercase tracking-wider text-on-surface-variant">Mặc định</th>
                 <th className="px-5 py-3.5 text-center text-xs font-bold uppercase tracking-wider text-on-surface-variant">Trạng thái</th>
                 <th className="px-5 py-3.5 text-right text-xs font-bold uppercase tracking-wider text-on-surface-variant">Hành động</th>
@@ -408,8 +481,28 @@ function ShippingTab() {
                     <p className="font-semibold text-on-surface">{m.name}</p>
                     {m.description && <p className="text-xs text-on-surface-variant mt-0.5">{m.description}</p>}
                   </td>
+                  <td className="px-5 py-4">
+                    <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${m.type === 'pickup' ? 'bg-amber-50 text-amber-700' : 'bg-blue-50 text-blue-700'}`}>
+                      {m.type === 'pickup' ? 'Nhận tại cửa hàng' : 'Giao hàng'}
+                    </span>
+                  </td>
+                  <td className="max-w-[220px] px-5 py-4 text-xs text-on-surface-variant">
+                    {deliveryAreasLabel(m)}
+                  </td>
                   <td className="px-5 py-4 text-on-surface">{formatPrice(m.basePrice)}</td>
-                  <td className="px-5 py-4 text-on-surface">{formatPrice(m.minOrderAmount)}</td>
+                  <td className="px-5 py-4 text-xs text-on-surface">
+                    <p>Tối thiểu {formatPrice(m.minOrderAmount)}</p>
+                    <p className="mt-1 text-on-surface-variant">
+                      {m.freeShippingThreshold == null ? 'Không ngưỡng miễn phí' : `Miễn phí từ ${formatPrice(m.freeShippingThreshold)}`}
+                    </p>
+                  </td>
+                  <td className="px-5 py-4 text-xs text-on-surface-variant">
+                    {m.type === 'pickup'
+                      ? 'Theo giờ cửa hàng'
+                      : m.etaMinDays == null || m.etaMaxDays == null
+                        ? 'Chưa cấu hình'
+                        : `${m.etaMinDays}-${m.etaMaxDays} ngày`}
+                  </td>
                   <td className="px-5 py-4 text-center">
                     {m.isDefault ? (
                       <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-bold text-primary">
@@ -451,42 +544,74 @@ function ShippingTab() {
       {/* Modal */}
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md overflow-hidden rounded-xl bg-white shadow-sm">
+          <div className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white shadow-sm">
             <div className="px-6 py-5 border-b border-on-surface-variant/8">
               <h3 className="text-base font-black text-on-surface">
-                {editingId ? 'Chỉnh sửa phương thức giao hàng' : 'Thêm phương thức giao hàng'}
+                {editingId ? 'Chỉnh sửa phương thức nhận hàng' : 'Thêm phương thức nhận hàng'}
               </h3>
             </div>
-            <div className="px-6 py-5 space-y-4">
+            <div className="space-y-4 overflow-y-auto px-6 py-5">
+              <div>
+                <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-on-surface-variant">
+                  Loại phương thức
+                </label>
+                <div className="grid grid-cols-2 rounded-2xl border border-on-surface-variant/15 bg-on-surface-variant/5 p-1">
+                  {([
+                    { value: 'delivery', label: 'Giao hàng' },
+                    { value: 'pickup', label: 'Nhận tại cửa hàng' },
+                  ] as const).map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => setForm((current) => ({
+                        ...current,
+                        type: option.value,
+                        isDefault: option.value === 'pickup' ? false : current.isDefault,
+                      }))}
+                      className={`rounded-xl px-3 py-2 text-sm font-bold transition ${
+                        form.type === option.value
+                          ? 'bg-white text-primary shadow-sm'
+                          : 'text-on-surface-variant hover:text-on-surface'
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-on-surface-variant mb-1.5">Tên *</label>
                 <input
                   value={form.name}
                   onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
                   className="w-full rounded-xl border border-on-surface-variant/20 bg-on-surface-variant/5 px-4 py-2.5 text-sm outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
-                  placeholder="Ví dụ: Giao hàng tiêu chuẩn"
+                  placeholder={form.type === 'pickup' ? 'Ví dụ: Nhận tại cửa hàng' : 'Ví dụ: Giao hàng tiêu chuẩn'}
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-on-surface-variant mb-1.5">Mô tả</label>
+                <label className="block text-xs font-bold uppercase tracking-wider text-on-surface-variant mb-1.5">
+                  {form.type === 'pickup' ? 'Hướng dẫn nhận hàng' : 'Mô tả'}
+                </label>
                 <input
                   value={form.description}
                   onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
                   className="w-full rounded-xl border border-on-surface-variant/20 bg-on-surface-variant/5 px-4 py-2.5 text-sm outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
-                  placeholder="Giao trong 3-5 ngày"
+                  placeholder={form.type === 'pickup' ? 'Khách mang mã đơn và số điện thoại khi đến nhận.' : 'Giao trong 3-5 ngày làm việc.'}
                 />
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-on-surface-variant mb-1.5">Cước phí (VND)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={form.basePrice}
-                    onChange={(e) => setForm((f) => ({ ...f, basePrice: e.target.value }))}
-                    className="w-full rounded-xl border border-on-surface-variant/20 bg-on-surface-variant/5 px-4 py-2.5 text-sm outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
-                  />
-                </div>
+                {form.type === 'delivery' ? (
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-on-surface-variant mb-1.5">Phí cơ bản (VND)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={form.basePrice}
+                      onChange={(e) => setForm((f) => ({ ...f, basePrice: e.target.value }))}
+                      className="w-full rounded-xl border border-on-surface-variant/20 bg-on-surface-variant/5 px-4 py-2.5 text-sm outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
+                    />
+                  </div>
+                ) : null}
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-on-surface-variant mb-1.5">Đơn tối thiểu (VND)</label>
                   <input
@@ -498,12 +623,78 @@ function ShippingTab() {
                   />
                 </div>
               </div>
+              {form.type === 'delivery' ? (
+                <>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-on-surface-variant mb-1.5">Miễn phí từ</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={form.freeShippingThreshold}
+                        onChange={(e) => setForm((f) => ({ ...f, freeShippingThreshold: e.target.value }))}
+                        className="w-full rounded-xl border border-on-surface-variant/20 bg-on-surface-variant/5 px-4 py-2.5 text-sm outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
+                        placeholder="Không áp dụng"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-on-surface-variant mb-1.5">ETA tối thiểu</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={form.etaMinDays}
+                        onChange={(e) => setForm((f) => ({ ...f, etaMinDays: e.target.value }))}
+                        className="w-full rounded-xl border border-on-surface-variant/20 bg-on-surface-variant/5 px-4 py-2.5 text-sm outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
+                        placeholder="Ngày"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-on-surface-variant mb-1.5">ETA tối đa</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={form.etaMaxDays}
+                        onChange={(e) => setForm((f) => ({ ...f, etaMaxDays: e.target.value }))}
+                        className="w-full rounded-xl border border-on-surface-variant/20 bg-on-surface-variant/5 px-4 py-2.5 text-sm outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
+                        placeholder="Ngày"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-on-surface-variant mb-1.5">Khu vực áp dụng</label>
+                    <textarea
+                      value={form.areasText}
+                      onChange={(e) => setForm((f) => ({ ...f, areasText: e.target.value }))}
+                      rows={3}
+                      className="w-full rounded-xl border border-on-surface-variant/20 bg-on-surface-variant/5 px-4 py-2.5 text-sm outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
+                      placeholder={'Để trống = toàn quốc\nHà Nội\nTP. Hồ Chí Minh | Quận 7'}
+                    />
+                    <p className="mt-1 text-xs text-on-surface-variant">
+                      Mỗi dòng là một tỉnh; thêm quận/huyện bằng dấu <span className="font-bold">|</span> để giới hạn chi tiết.
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                  Nhận tại cửa hàng luôn có phí 0 đồng và không kiểm tra khu vực giao hàng. Checkout chỉ yêu cầu tên người nhận và số điện thoại.
+                </div>
+              )}
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-on-surface-variant mb-1.5">Ghi chú khu vực hiển thị</label>
+                <input
+                  value={form.region}
+                  onChange={(e) => setForm((f) => ({ ...f, region: e.target.value }))}
+                  className="w-full rounded-xl border border-on-surface-variant/20 bg-on-surface-variant/5 px-4 py-2.5 text-sm outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
+                  placeholder={form.type === 'pickup' ? 'Ví dụ: Cửa hàng Hưng Yên' : 'Ví dụ: Nội thành, liên tỉnh...'}
+                />
+              </div>
               <div className="flex items-center gap-6">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={form.isDefault}
                     onChange={(e) => setForm((f) => ({ ...f, isDefault: e.target.checked }))}
+                    disabled={form.type === 'pickup'}
                     className="h-4 w-4 rounded accent-primary"
                   />
                   <span className="text-sm font-semibold text-on-surface">Đặt làm mặc định</span>

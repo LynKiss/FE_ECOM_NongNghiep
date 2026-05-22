@@ -76,8 +76,7 @@ export default function Cart() {
   const discountAmount = discountResult
     ? Number(discountResult.discountAmount)
     : 0;
-  const shipping = subtotal >= 500000 ? 0 : 30000;
-  const total = Math.max(0, subtotal - discountAmount) + shipping;
+  const total = Math.max(0, subtotal - discountAmount);
   const hasBlockedItems = Boolean(
     cart?.items.some((item) => item.isUnavailable || item.stockIssue),
   );
@@ -529,14 +528,10 @@ export default function Cart() {
                       {formatPrice(subtotal)}
                     </span>
                   </div>
-                  <div className="flex justify-between">
+                  <div className="flex items-start justify-between gap-4">
                     <span className="text-gray-500">Phí vận chuyển</span>
-                    <span
-                      className={`font-semibold ${
-                        shipping === 0 ? 'text-[#006241]' : ''
-                      }`}
-                    >
-                      {shipping === 0 ? 'Miễn phí' : formatPrice(shipping)}
+                    <span className="max-w-[190px] text-right text-xs font-semibold text-gray-500">
+                      Tính ở bước chọn phương thức nhận hàng
                     </span>
                   </div>
                   {discountAmount > 0 && (
