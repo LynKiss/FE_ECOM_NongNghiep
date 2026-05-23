@@ -25,6 +25,11 @@ interface OrderDetail {
   subtotalAmount: string;
   discountAmount: string;
   deliveryCost: string;
+  fulfillmentType: 'delivery' | 'pickup';
+  deliveryMethodName: string | null;
+  freeShippingApplied: boolean;
+  pickupContactName: string | null;
+  pickupContactPhone: string | null;
   totalPayment: string;
   totalQuantity: number;
   createdAt: string;
@@ -102,6 +107,7 @@ export default function InvoicePrintPage() {
   }
 
   const today = new Date(order.createdAt);
+  const isPickup = order.fulfillmentType === 'pickup';
 
   return (
     <>
@@ -182,6 +188,10 @@ export default function InvoicePrintPage() {
             <p className="mt-1 font-bold text-on-surface">{order.fullName}</p>
             <p className="text-on-surface-variant">{order.phone}</p>
             <p className="mt-1 text-xs text-on-surface-variant">{order.address}</p>
+            <p className="mt-1 text-xs font-semibold text-primary">
+              {isPickup ? 'Nhận tại cửa hàng' : 'Giao hàng'}
+              {order.deliveryMethodName ? ` · ${order.deliveryMethodName}` : ''}
+            </p>
           </div>
           <div className="text-right">
             <p className="text-[11px] font-black uppercase tracking-widest text-on-surface-variant/60">
@@ -263,7 +273,7 @@ export default function InvoicePrintPage() {
                   <span>-{fmtMoney(order.discountAmount)}</span>
                 </div>
                 <div className="flex justify-between text-on-surface-variant">
-                  <span>Phí giao hàng:</span>
+                  <span>{isPickup ? 'Phí nhận hàng:' : 'Phí giao hàng:'}</span>
                   <span>{fmtMoney(order.deliveryCost)}</span>
                 </div>
                 <div className="border-t border-on-surface pt-2 flex justify-between text-base font-black">

@@ -147,6 +147,15 @@ export default function Checkout() {
     () => cart?.items.map((item) => item.productId) ?? [],
     [cart],
   );
+  const voucherItems = useMemo(
+    () =>
+      cart?.items.map((item) => ({
+        productId: item.productId,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+      })) ?? [],
+    [cart],
+  );
   const sortedVouchers = useMemo(() => sortVouchers(vouchers), [vouchers]);
   const quickVouchers = sortedVouchers.slice(0, 3);
   const selectedAddress = addresses.find((address) => address.id === selectedAddressId);
@@ -218,7 +227,7 @@ export default function Checkout() {
     let cancelled = false;
     setLoadingVouchers(true);
 
-    fetchVouchersForCart({ orderValue: subtotal, productIds })
+    fetchVouchersForCart({ orderValue: subtotal, productIds, items: voucherItems })
       .then((data) => {
         if (!cancelled) setVouchers(data);
       })
@@ -232,7 +241,7 @@ export default function Checkout() {
     return () => {
       cancelled = true;
     };
-  }, [cart, subtotal, productIds.join('|')]);
+  }, [cart, subtotal, productIds.join('|'), voucherItems]);
 
   const applyVoucher = async (code: string) => {
     if (!cart) return;
@@ -246,6 +255,7 @@ export default function Checkout() {
       const result = await validateVoucherCode(normalized, {
         orderValue: subtotal,
         productIds,
+        items: voucherItems,
       });
       setAppliedDiscountCode(result.code);
       setAppliedDiscountAmount(Number(result.discountAmount));

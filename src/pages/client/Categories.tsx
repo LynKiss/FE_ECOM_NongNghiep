@@ -39,7 +39,7 @@ type Product = {
 };
 
 const TRUST_BADGES = [
-  { icon: Truck, title: 'Miễn phí vận chuyển', desc: 'Đơn từ 500.000đ' },
+  { icon: Truck, title: 'Nhận hàng linh hoạt', desc: 'Báo phí ở checkout' },
   { icon: ShieldCheck, title: 'Hàng chính hãng', desc: '100% có chứng nhận' },
   { icon: RotateCcw, title: 'Đổi trả 7 ngày', desc: 'Lỗi NSX hoặc khác mô tả' },
   { icon: Award, title: 'CSKH 7-21h', desc: 'Hotline 1800 6863' },

@@ -48,6 +48,11 @@ type OrderDetailResponse = {
   subtotalAmount: string;
   discountAmount: string;
   deliveryCost: string;
+  fulfillmentType: 'delivery' | 'pickup';
+  deliveryMethodName: string | null;
+  freeShippingApplied: boolean;
+  pickupContactName: string | null;
+  pickupContactPhone: string | null;
   fullName: string;
   phone: string;
   address: string;
@@ -88,6 +93,7 @@ const PAYMENT_STATUS_LABELS: Record<string, { label: string; color: string }> = 
   unpaid: { label: 'Chưa thanh toán', color: '#b45309' },
   paid: { label: 'Đã thanh toán', color: '#15803d' },
   failed: { label: 'Thanh toán thất bại', color: '#dc2626' },
+  partial_refunded: { label: 'Hoàn tiền một phần', color: '#b45309' },
   refunded: { label: 'Đã hoàn tiền', color: '#6d28d9' },
 };
 
@@ -149,6 +155,7 @@ export default function OrderDetail() {
   const [returnModalOpen, setReturnModalOpen] = useState(false);
   const [shortDeliveryModalOpen, setShortDeliveryModalOpen] = useState(false);
   const [returnItemId, setReturnItemId] = useState<string>('');
+  const [returnQuantity, setReturnQuantity] = useState('1');
   const [returnReason, setReturnReason] = useState<ReturnReason>('damaged');
   const [returnDescription, setReturnDescription] = useState('');
   const [shortQuantities, setShortQuantities] = useState<Record<string, string>>({});
@@ -157,7 +164,9 @@ export default function OrderDetail() {
   const { addItem } = useCart();
   const { showToast } = useToast();
 
-  const shouldShowTracking = order?.status === 'shipping' || order?.status === 'delivered';
+  const shouldShowTracking =
+    order?.fulfillmentType !== 'pickup' &&
+    (order?.status === 'shipping' || order?.status === 'delivered');
   const activeMapPoint = tracking?.activeLocation ?? tracking?.manualLocation ?? tracking?.gpsLocation ?? null;
 
   const handleReorder = async () => {
@@ -341,6 +350,7 @@ export default function OrderDetail() {
   const openReturnModal = () => {
     if (!order?.items?.length) return;
     setReturnItemId(order.items[0].id);
+    setReturnQuantity('1');
     setReturnReason('damaged');
     setReturnDescription('');
     setReturnModalOpen(true);
@@ -348,6 +358,21 @@ export default function OrderDetail() {
 
   const submitReturnRequest = async () => {
     if (!order || !returnItemId) return;
+    const selectedReturnItem = order.items.find((item) => item.id === returnItemId);
+    const quantity = Number(returnQuantity);
+    if (
+      !selectedReturnItem ||
+      !Number.isInteger(quantity) ||
+      quantity <= 0 ||
+      quantity > selectedReturnItem.quantity
+    ) {
+      showToast({
+        tone: 'error',
+        title: 'Số lượng trả không hợp lệ',
+        description: 'Số lượng trả phải nằm trong số lượng đã mua của dòng hàng.',
+      });
+      return;
+    }
     if (!returnDescription.trim()) {
       showToast({ tone: 'error', title: 'Thiếu thông tin', description: 'Vui lòng mô tả chi tiết vấn đề.' });
       return;
@@ -357,6 +382,7 @@ export default function OrderDetail() {
       await clientApi.post('/returns', {
         orderId: order.id,
         orderItemId: returnItemId,
+        returnQuantity: quantity,
         reason: returnReason,
         description: returnDescription.trim(),
       });
@@ -396,6 +422,7 @@ export default function OrderDetail() {
         await clientApi.post('/returns', {
           orderId: order.id,
           orderItemId: item.id,
+          returnQuantity: missing,
           reason: 'short_delivery',
           description: `Đã nhận ${actual}/${item.quantity}, thiếu ${missing} ${item.productName}.`,
         });
@@ -437,6 +464,7 @@ export default function OrderDetail() {
     label: order.paymentStatus,
     color: '#374151',
   };
+  const isPickup = order.fulfillmentType === 'pickup';
 
   return (
     <div style={{ background: '#f2f0eb', minHeight: '80vh' }}>
@@ -700,7 +728,7 @@ export default function OrderDetail() {
                   </div>
                 ) : null}
                 <div className="flex justify-between text-gray-500">
-                  <span>Phí vận chuyển</span>
+                  <span>{isPickup ? 'Phí nhận hàng' : 'Phí vận chuyển'}</span>
                   <span>
                     {Number(order.deliveryCost) === 0
                       ? 'Miễn phí'
@@ -718,11 +746,16 @@ export default function OrderDetail() {
           <div className="space-y-4">
             <div className="rounded-2xl bg-white p-5 shadow-sm">
               <h3 className="mb-3 flex items-center gap-2 text-xs font-black uppercase tracking-wider text-gray-400">
-                <MapPin size={13} /> Địa chỉ giao hàng
+                <MapPin size={13} /> {isPickup ? 'Nhận tại cửa hàng' : 'Địa chỉ giao hàng'}
               </h3>
               <p className="text-sm font-semibold text-[#1E3932]">{order.fullName}</p>
               <p className="text-sm text-gray-500">{order.phone}</p>
               <p className="mt-1 text-sm text-gray-600">{order.address}</p>
+              {order.deliveryMethodName ? (
+                <p className="mt-2 text-xs font-semibold text-[#006241]">
+                  {isPickup ? 'Phương thức nhận hàng' : 'Phương thức vận chuyển'}: {order.deliveryMethodName}
+                </p>
+              ) : null}
             </div>
 
             <div className="rounded-2xl bg-white p-5 shadow-sm">
@@ -783,7 +816,9 @@ export default function OrderDetail() {
                   Tạo yêu cầu trả hàng
                 </button>
               ) : null}
-              {order.status === 'pending' ? (
+              {order.status === 'pending' &&
+              order.paymentStatus !== 'paid' &&
+              order.paymentStatus !== 'partial_refunded' ? (
                 <button
                   onClick={async () => {
                     if (!window.confirm('Bạn có chắc muốn hủy đơn hàng này?')) return;
@@ -793,17 +828,27 @@ export default function OrderDetail() {
                         current ? { ...current, status: 'cancelled' } : current,
                       );
                     } catch (error) {
-                      alert(
-                        error instanceof Error
-                          ? error.message
-                          : 'Không thể hủy đơn hàng',
-                      );
+                      showToast({
+                        tone: 'error',
+                        title: 'Không thể hủy đơn hàng',
+                        description:
+                          error instanceof Error
+                            ? error.message
+                            : 'Đơn đã thu tiền cần được hỗ trợ hoàn tiền trước khi hủy.',
+                      });
                     }
                   }}
                   className="w-full rounded-full border border-red-200 py-2.5 text-sm font-bold text-red-600 transition hover:bg-red-50 active:scale-95"
                 >
                   Hủy đơn hàng
                 </button>
+              ) : null}
+              {order.status === 'pending' &&
+              (order.paymentStatus === 'paid' ||
+                order.paymentStatus === 'partial_refunded') ? (
+                <p className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+                  Đơn đã thu tiền. Hủy đơn cần nhân viên xác nhận hoàn tiền trước.
+                </p>
               ) : null}
               {(isCancelled || isDelivered) && (
                 <button
@@ -857,11 +902,29 @@ export default function OrderDetail() {
             <div className="space-y-3">
               <label className="block">
                 <span className="text-xs font-bold uppercase text-gray-500">Sản phẩm cần trả</span>
-                <select value={returnItemId} onChange={(e) => setReturnItemId(e.target.value)} className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm">
+                <select
+                  value={returnItemId}
+                  onChange={(e) => {
+                    setReturnItemId(e.target.value);
+                    setReturnQuantity('1');
+                  }}
+                  className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                >
                   {order.items.map((it) => (
                     <option key={it.id} value={it.id}>{it.productName} × {it.quantity}</option>
                   ))}
                 </select>
+              </label>
+              <label className="block">
+                <span className="text-xs font-bold uppercase text-gray-500">Số lượng trả</span>
+                <input
+                  type="number"
+                  min="1"
+                  max={order.items.find((item) => item.id === returnItemId)?.quantity ?? 1}
+                  value={returnQuantity}
+                  onChange={(e) => setReturnQuantity(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                />
               </label>
               <label className="block">
                 <span className="text-xs font-bold uppercase text-gray-500">Lý do</span>

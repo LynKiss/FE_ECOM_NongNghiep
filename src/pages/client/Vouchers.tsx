@@ -46,6 +46,15 @@ export default function Vouchers() {
     () => cart?.items.map((item) => item.productId) ?? [],
     [cart],
   );
+  const voucherItems = useMemo(
+    () =>
+      cart?.items.map((item) => ({
+        productId: item.productId,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+      })) ?? [],
+    [cart],
+  );
   const sortedVouchers = useMemo(() => sortVouchers(vouchers), [vouchers]);
   const readyCount = sortedVouchers.filter((voucher) => voucher.eligible).length;
   const bestVoucher = sortedVouchers.find(
@@ -62,7 +71,7 @@ export default function Vouchers() {
     let cancelled = false;
     setLoading(true);
 
-    fetchVouchersForCart({ orderValue: subtotal, productIds })
+    fetchVouchersForCart({ orderValue: subtotal, productIds, items: voucherItems })
       .then((data) => {
         if (!cancelled) setVouchers(data);
       })
@@ -76,7 +85,7 @@ export default function Vouchers() {
     return () => {
       cancelled = true;
     };
-  }, [subtotal, productIds.join('|')]);
+  }, [subtotal, productIds.join('|'), voucherItems]);
 
   async function copyCode(code: string) {
     try {
@@ -102,7 +111,11 @@ export default function Vouchers() {
     setSavingId(voucher.id);
     try {
       await saveVoucherToWallet(voucher.id);
-      const data = await fetchVouchersForCart({ orderValue: subtotal, productIds });
+      const data = await fetchVouchersForCart({
+        orderValue: subtotal,
+        productIds,
+        items: voucherItems,
+      });
       setVouchers(data);
     } finally {
       setSavingId(null);

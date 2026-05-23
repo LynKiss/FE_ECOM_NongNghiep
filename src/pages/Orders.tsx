@@ -60,6 +60,8 @@ type OrderSummary = {
   id: string;
   status: OrderStatus;
   paymentStatus: PaymentStatus;
+  fulfillmentType: 'delivery' | 'pickup';
+  deliveryMethodName?: string | null;
   totalPayment: string;
   fullName: string;
   phone: string;
@@ -73,10 +75,22 @@ type OrderDetail = OrderSummary & {
   subtotalAmount: string;
   discountAmount: string;
   deliveryCost: string;
+  freeShippingApplied: boolean;
+  pickupContactName: string | null;
+  pickupContactPhone: string | null;
   totalQuantity: number;
   note: string | null;
   items: OrderItem[];
   history: OrderHistory[];
+  refunds: Array<{
+    refundId: string;
+    reason: 'return' | 'cancel_paid_order' | 'short_delivery' | 'manual_adjustment';
+    amount: string;
+    refundStatus: 'pending' | 'approved' | 'completed' | 'failed';
+    manualReference: string | null;
+    note: string | null;
+    createdAt: string;
+  }>;
 };
 
 type OrderResponse = {
@@ -123,10 +137,10 @@ const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   pending: ['confirmed', 'cancelled'],
   confirmed: ['processing', 'cancelled'],
   processing: ['shipping', 'delivered', 'cancelled'],
-  shipping: ['delivered', 'partial_delivered', 'returned'],
-  partial_delivered: ['returned', 'partial_returned'],
-  partial_returned: ['returned'],
-  delivered: ['returned', 'partial_returned'],
+  shipping: ['delivered', 'partial_delivered'],
+  partial_delivered: ['partial_returned'],
+  partial_returned: [],
+  delivered: ['partial_returned'],
   cancelled: [],
   returned: [],
 };
@@ -147,6 +161,17 @@ const EMPTY_LIVE_FORM: LiveTrackingForm = {
 
 function getAllowedNextStatuses(current: OrderStatus): OrderStatus[] {
   return ALLOWED_TRANSITIONS[current] ?? [];
+}
+
+function hasCollectedPayment(paymentStatus: PaymentStatus) {
+  return paymentStatus === 'paid' || paymentStatus === 'partial_refunded';
+}
+
+function getAllowedOrderNextStatuses(order: Pick<OrderSummary, 'status' | 'paymentStatus'>) {
+  const next = getAllowedNextStatuses(order.status);
+  return hasCollectedPayment(order.paymentStatus)
+    ? next.filter((status) => status !== 'cancelled')
+    : next;
 }
 
 function getMapEmbedUrl(latitude: number, longitude: number) {
@@ -199,6 +224,7 @@ export default function Orders() {
   const [selectedOrder, setSelectedOrder] = useState<OrderDetail | null>(null);
   const [activeTab, setActiveTab] = useState<'detail' | 'tracking'>('detail');
   const [nextStatus, setNextStatus] = useState<OrderStatus>('pending');
+  const [creatingCancelRefund, setCreatingCancelRefund] = useState(false);
   const [statusNote, setStatusNote] = useState('');
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [confirmingPayment, setConfirmingPayment] = useState(false);
@@ -319,7 +345,7 @@ export default function Orders() {
   }, [reloadKey]);
 
   useEffect(() => {
-    if (!detailOpen || !selectedOrder) {
+    if (!detailOpen || !selectedOrder || selectedOrder.fulfillmentType === 'pickup') {
       return;
     }
 
@@ -406,7 +432,7 @@ export default function Orders() {
     try {
       const detail = await apiClient.get<OrderDetail>(`/orders/${orderId}`);
       setSelectedOrder(detail);
-      const allowed = getAllowedNextStatuses(detail.status);
+      const allowed = getAllowedOrderNextStatuses(detail);
       setNextStatus(allowed[0] ?? detail.status);
       setStatusNote('');
     } catch (detailError) {
@@ -436,7 +462,7 @@ export default function Orders() {
 
       setSelectedOrder(updated);
       setStatusNote('');
-      const newAllowed = getAllowedNextStatuses(updated.status);
+      const newAllowed = getAllowedOrderNextStatuses(updated);
       setNextStatus(newAllowed[0] ?? updated.status);
       setOrders((current) =>
         current.map((order) =>
@@ -481,6 +507,41 @@ export default function Orders() {
       showToast({ tone: 'error', title: isVietnamese ? 'Xác nhận thất bại' : 'Failed', description: err instanceof Error ? err.message : '' });
     } finally {
       setConfirmingPayment(false);
+    }
+  }
+
+  async function handleCreateCancelRefund() {
+    if (!selectedOrder) return;
+    const note =
+      window.prompt(
+        isVietnamese
+          ? 'Ghi chú tạo hoàn tiền hủy đơn đã thu tiền:'
+          : 'Note for paid cancellation refund:',
+      )?.trim() || undefined;
+
+    setCreatingCancelRefund(true);
+    try {
+      await apiClient.post('/payments/admin/refunds/cancel-paid-order', {
+        orderId: selectedOrder.id,
+        note,
+      });
+      showToast({
+        tone: 'success',
+        title: isVietnamese
+          ? 'Đã tạo yêu cầu hoàn tiền hủy đơn'
+          : 'Paid cancellation refund created',
+        description: isVietnamese
+          ? 'Chốt chứng từ hoàn tiền trong màn Thanh toán > Hoàn tiền.'
+          : 'Complete it in Payments > Refunds.',
+      });
+    } catch (error) {
+      showToast({
+        tone: 'error',
+        title: isVietnamese ? 'Không tạo được hoàn tiền' : 'Unable to create refund',
+        description: error instanceof Error ? error.message : '',
+      });
+    } finally {
+      setCreatingCancelRefund(false);
     }
   }
 
@@ -787,6 +848,11 @@ export default function Orders() {
                     <td className="px-4 py-4">
                       <p className="font-semibold text-on-surface">{order.fullName}</p>
                       <p className="text-xs text-on-surface-variant">{order.address}</p>
+                      <p className="mt-1 text-[11px] font-bold text-primary">
+                        {order.fulfillmentType === 'pickup'
+                          ? (isVietnamese ? 'Nhận tại cửa hàng' : 'Store pickup')
+                          : (isVietnamese ? 'Giao hàng' : 'Delivery')}
+                      </p>
                     </td>
                     <td className="px-4 py-4 text-on-surface-variant">{order.phone}</td>
                     <td className="px-4 py-4 font-semibold text-on-surface">
@@ -875,9 +941,24 @@ export default function Orders() {
                   </button>
                 )}
 
+              {hasCollectedPayment(selectedOrder.paymentStatus) &&
+                getAllowedNextStatuses(selectedOrder.status).includes('cancelled') && (
+                  <button
+                    type="button"
+                    onClick={() => void handleCreateCancelRefund()}
+                    disabled={creatingCancelRefund}
+                    className="admin-pill px-4 py-2.5 text-sm font-black text-white disabled:opacity-60"
+                    style={{ background: '#b45309' }}
+                  >
+                    {creatingCancelRefund
+                      ? (isVietnamese ? 'Đang tạo hoàn tiền...' : 'Creating refund...')
+                      : (isVietnamese ? 'Tạo hoàn tiền để hủy đơn' : 'Create cancellation refund')}
+                  </button>
+                )}
+
               {activeTab === 'detail' && (
                 <div className="flex flex-wrap items-center gap-3">
-                  {getAllowedNextStatuses(selectedOrder.status).length === 0 ? (
+                  {getAllowedOrderNextStatuses(selectedOrder).length === 0 ? (
                     <span className="rounded-xl border border-on-surface/10 bg-surface/60 px-4 py-2.5 text-sm italic text-on-surface-variant/60">
                       {isVietnamese ? 'Đơn hàng đã kết thúc' : 'Order is finalized'}
                     </span>
@@ -888,7 +969,7 @@ export default function Orders() {
                         onChange={(event) => setNextStatus(event.target.value as OrderStatus)}
                         className="rounded-xl border border-on-surface/10 bg-surface px-4 py-2.5 text-sm outline-none"
                       >
-                        {getAllowedNextStatuses(selectedOrder.status).map((item) => (
+                        {getAllowedOrderNextStatuses(selectedOrder).map((item) => (
                           <option key={item} value={item}>
                             {getStatusLabel(item, isVietnamese)}
                           </option>
@@ -920,7 +1001,9 @@ export default function Orders() {
 
               {activeTab === 'tracking' && (
                 <span className="text-sm text-on-surface-variant/60 italic">
-                  {tracking
+                  {selectedOrder.fulfillmentType === 'pickup'
+                    ? (isVietnamese ? 'Đơn nhận tại cửa hàng không dùng tracking giao hàng' : 'Store pickup does not use delivery tracking')
+                    : tracking
                     ? `${TRACKING_MODE_LABELS[tracking.mode]} — ${TRACKING_SOURCE_LABELS[tracking.activeSource]}`
                     : isVietnamese ? 'Chưa có tín hiệu tracking' : 'No tracking signal'}
                 </span>
@@ -939,7 +1022,12 @@ export default function Orders() {
             <div className="flex gap-1 rounded-xl border border-on-surface/8 bg-surface/60 p-1">
               {([
                 { key: 'detail', label: isVietnamese ? '📋 Chi tiết & trạng thái' : '📋 Detail & status' },
-                { key: 'tracking', label: isVietnamese ? '🗺 Tracking giao hàng' : '🗺 Delivery tracking' },
+                {
+                  key: 'tracking',
+                  label: selectedOrder.fulfillmentType === 'pickup'
+                    ? (isVietnamese ? '🏪 Nhận tại cửa hàng' : '🏪 Store pickup')
+                    : (isVietnamese ? '🗺 Tracking giao hàng' : '🗺 Delivery tracking'),
+                },
               ] as const).map((tab) => (
                 <button
                   key={tab.key}
@@ -975,8 +1063,26 @@ export default function Orders() {
                   />
                   <DetailCard label={isVietnamese ? 'Số điện thoại' : 'Phone'} value={selectedOrder.phone} />
                   <DetailCard
-                    label={isVietnamese ? 'Địa chỉ' : 'Address'}
+                    label={
+                      selectedOrder.fulfillmentType === 'pickup'
+                        ? (isVietnamese ? 'Nhận tại cửa hàng' : 'Store pickup')
+                        : (isVietnamese ? 'Địa chỉ' : 'Address')
+                    }
                     value={selectedOrder.address}
+                  />
+                  <DetailCard
+                    label={isVietnamese ? 'Phương thức nhận hàng' : 'Fulfillment'}
+                    value={
+                      selectedOrder.deliveryMethodName ||
+                      (selectedOrder.fulfillmentType === 'pickup'
+                        ? (isVietnamese ? 'Nhận tại cửa hàng' : 'Store pickup')
+                        : (isVietnamese ? 'Giao hàng' : 'Delivery'))
+                    }
+                    subValue={
+                      selectedOrder.fulfillmentType === 'pickup'
+                        ? (isVietnamese ? 'Khách nhận tại cửa hàng' : 'Customer pickup')
+                        : (isVietnamese ? 'Giao đến địa chỉ khách' : 'Ship to customer address')
+                    }
                   />
                   <DetailCard
                     label={isVietnamese ? 'Ngày tạo' : 'Created at'}
@@ -1027,7 +1133,11 @@ export default function Orders() {
                       value={currency.format(Number(selectedOrder.discountAmount))}
                     />
                     <SummaryRow
-                      label={isVietnamese ? 'Phí giao hàng' : 'Delivery'}
+                      label={
+                        selectedOrder.fulfillmentType === 'pickup'
+                          ? (isVietnamese ? 'Phí nhận hàng' : 'Pickup fee')
+                          : (isVietnamese ? 'Phí giao hàng' : 'Delivery')
+                      }
                       value={currency.format(Number(selectedOrder.deliveryCost))}
                     />
                     <SummaryRow
@@ -1044,6 +1154,35 @@ export default function Orders() {
                       {getStatusLabel(selectedOrder.status, isVietnamese)}
                     </Badge>
                   </div>
+                  {selectedOrder.refunds?.length ? (
+                    <div className="mt-4 space-y-2 border-t border-on-surface/8 pt-4">
+                      <p className="text-xs font-black uppercase tracking-[0.18em] text-on-surface-variant/60">
+                        {isVietnamese ? 'Hoàn tiền liên quan' : 'Related refunds'}
+                      </p>
+                      {selectedOrder.refunds.map((refund) => (
+                        <div key={refund.refundId} className="rounded-xl bg-white px-3 py-2 text-xs">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-bold text-on-surface">
+                              {refund.reason === 'cancel_paid_order'
+                                ? (isVietnamese ? 'Hủy đơn đã thu tiền' : 'Paid cancellation')
+                                : refund.reason === 'short_delivery'
+                                  ? (isVietnamese ? 'Giao thiếu' : 'Short delivery')
+                                  : refund.reason === 'return'
+                                    ? (isVietnamese ? 'Trả hàng' : 'Return')
+                                    : (isVietnamese ? 'Điều chỉnh' : 'Adjustment')}
+                            </span>
+                            <span className="font-black text-primary">
+                              {currency.format(Number(refund.amount))}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-on-surface-variant">
+                            {refund.refundStatus}
+                            {refund.manualReference ? ` · ${refund.manualReference}` : ''}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
 
                 <div className="rounded-xl border border-on-surface/8 bg-surface/50 p-4">
@@ -1088,7 +1227,20 @@ export default function Orders() {
             </div>
             )}
 
-            {activeTab === 'tracking' && (
+            {activeTab === 'tracking' && selectedOrder.fulfillmentType === 'pickup' && (
+              <section className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
+                <h3 className="font-black">
+                  {isVietnamese ? 'Đơn nhận tại cửa hàng' : 'Store pickup order'}
+                </h3>
+                <p className="mt-1">
+                  {isVietnamese
+                    ? 'Đơn này không dùng bản đồ tracking giao hàng. Theo dõi tiến độ bằng trạng thái xử lý và ghi chú lịch sử đơn.'
+                    : 'This order does not use delivery map tracking. Follow fulfillment through order status and history.'}
+                </p>
+              </section>
+            )}
+
+            {activeTab === 'tracking' && selectedOrder.fulfillmentType !== 'pickup' && (
             <section className="rounded-xl border border-on-surface/8 bg-surface/50 p-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>

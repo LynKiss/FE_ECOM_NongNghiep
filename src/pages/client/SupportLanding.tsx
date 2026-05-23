@@ -62,7 +62,7 @@ const supportPages: Record<string, SupportConfig> = {
       },
     ],
     notes: [
-      'Đơn từ 500.000đ được miễn phí vận chuyển theo chính sách hiện tại.',
+      'Phí nhận hàng và điều kiện miễn phí được tính ở checkout theo phương thức, khu vực và giá trị đơn hiện tại.',
       'Voucher có thể có hạn dùng, số lượt và điều kiện đơn tối thiểu.',
       'Bạn nên đăng nhập trước khi đặt hàng để lưu địa chỉ và theo dõi đơn dễ hơn.',
     ],

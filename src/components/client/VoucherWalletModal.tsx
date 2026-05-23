@@ -52,6 +52,15 @@ export default function VoucherWalletModal() {
     () => cart?.items.map((item) => item.productId) ?? [],
     [cart],
   );
+  const voucherItems = useMemo(
+    () =>
+      cart?.items.map((item) => ({
+        productId: item.productId,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+      })) ?? [],
+    [cart],
+  );
   const productIdsKey = productIds.join('|');
 
   useEffect(() => {
@@ -59,7 +68,7 @@ export default function VoucherWalletModal() {
 
     let cancelled = false;
     setLoading(true);
-    fetchVouchersForCart({ orderValue: subtotal, productIds })
+    fetchVouchersForCart({ orderValue: subtotal, productIds, items: voucherItems })
       .then((data) => {
         if (!cancelled) setVouchers(data);
       })
@@ -73,7 +82,7 @@ export default function VoucherWalletModal() {
     return () => {
       cancelled = true;
     };
-  }, [open, subtotal, productIdsKey]);
+  }, [open, subtotal, productIdsKey, voucherItems]);
 
   useEffect(() => {
     if (!open) return;
@@ -96,7 +105,11 @@ export default function VoucherWalletModal() {
   const readyCount = sortedVouchers.filter((voucher) => voucher.eligible).length;
 
   const refreshVouchers = async () => {
-    const next = await fetchVouchersForCart({ orderValue: subtotal, productIds });
+    const next = await fetchVouchersForCart({
+      orderValue: subtotal,
+      productIds,
+      items: voucherItems,
+    });
     setVouchers(next);
   };
 

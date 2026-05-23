@@ -530,7 +530,7 @@ export default function Products() {
             {isVi ? 'Làm mới' : 'Refresh'}
           </button>
           <Link
-            to="/admin/products/create"
+            to="/admin/products/new"
             className="admin-pill admin-pill-primary px-4 py-2.5 text-sm font-bold"
           >
             <Plus size={15} />

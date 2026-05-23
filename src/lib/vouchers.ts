@@ -40,19 +40,33 @@ export type DiscountResult = {
 type VoucherQuery = {
   orderValue: number;
   productIds?: string[];
+  items?: Array<{
+    productId: string;
+    quantity: number;
+    unitPrice: string | number;
+  }>;
 };
 
 export async function fetchVouchersForCart(query: VoucherQuery) {
   const payload = {
     orderValue: String(Math.max(0, query.orderValue)),
     ...(query.productIds?.length ? { productIds: query.productIds } : {}),
+    ...(query.items?.length
+      ? {
+          items: query.items.map((item) => ({
+            productId: item.productId,
+            quantity: String(item.quantity),
+            unitPrice: String(item.unitPrice),
+          })),
+        }
+      : {}),
   };
 
   if (getClientSession()) {
     return clientApi.post<Voucher[]>('/discounts/available-for-cart', payload);
   }
 
-  return clientApi.get<Voucher[]>('/discounts');
+  return [];
 }
 
 export async function fetchSavedVouchers() {
@@ -73,6 +87,15 @@ export function validateVoucherCode(
     discountCode: discountCode.trim().toUpperCase(),
     orderValue: String(Math.max(0, query.orderValue)),
     ...(query.productIds?.length ? { productIds: query.productIds } : {}),
+    ...(query.items?.length
+      ? {
+          items: query.items.map((item) => ({
+            productId: item.productId,
+            quantity: String(item.quantity),
+            unitPrice: String(item.unitPrice),
+          })),
+        }
+      : {}),
   });
 }
 

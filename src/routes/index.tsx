@@ -107,6 +107,7 @@ export const router = createBrowserRouter([
               { path: 'analytics', element: withSuspense(<AnalyticsPage />) },
               { path: 'products', element: withSuspense(<ProductsPage />) },
               { path: 'products/new', element: withSuspense(<ProductCreatePage />) },
+              { path: 'products/create', element: <Navigate to="/admin/products/new" replace /> },
               { path: 'products/import', element: withSuspense(<ProductImportPage />) },
               { path: 'products/inventory-damage', element: withSuspense(<ProductInventoryDamagePage />) },
               { path: 'products/inventory-lowstock', element: withSuspense(<ProductInventoryLowStockPage />) },

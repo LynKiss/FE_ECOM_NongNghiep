@@ -65,7 +65,7 @@ const DEFAULT_STATS: Array<{ value: string; label: string }> = [
 
 const DEFAULT_WHY_US: Array<{ title: string; description: string }> = [
   { title: 'Hàng chính hãng 100%', description: 'Toàn bộ sản phẩm có giấy chứng nhận và nguồn gốc rõ ràng. Cam kết không hàng giả, hàng nhái.' },
-  { title: 'Giao hàng toàn quốc', description: 'Đối tác vận chuyển uy tín, giao hàng 2–4 ngày. Miễn phí vận chuyển đơn hàng từ 500.000đ.' },
+  { title: 'Nhận hàng linh hoạt', description: 'Chọn giao đến địa chỉ hoặc nhận tại cửa hàng. Checkout báo phí và thời gian dự kiến theo phương thức hiện tại.' },
   { title: 'Hỗ trợ kỹ thuật', description: 'Đội ngũ kỹ sư nông nghiệp tư vấn trực tiếp. Hotline miễn phí 1800 6863, hỗ trợ 7 ngày/tuần.' },
   { title: 'Đổi trả dễ dàng', description: 'Chính sách đổi trả trong 7 ngày nếu sản phẩm lỗi hoặc không đúng mô tả. Hoàn tiền 100%.' },
 ];

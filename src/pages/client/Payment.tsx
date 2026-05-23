@@ -138,6 +138,17 @@ function isCartChangedError(error: unknown) {
   );
 }
 
+function isFulfillmentChangedError(error: unknown) {
+  const apiError = error as ClientApiError;
+  return [
+    'DELIVERY_METHOD_INACTIVE',
+    'DELIVERY_OUT_OF_AREA',
+    'DELIVERY_MIN_ORDER_NOT_MET',
+    'PICKUP_CONTACT_REQUIRED',
+    'SHIPPING_ADDRESS_REQUIRED',
+  ].includes(apiError?.error ?? '');
+}
+
 function mergePublicPaymentSettings(
   settings?: Partial<PublicPaymentSettings> | null,
 ): PublicPaymentSettings {
@@ -380,7 +391,7 @@ export default function Payment() {
             deliveryId: state.deliveryId,
             paymentMethod: method,
             note: state.note || undefined,
-            discountCode: state.discountCode || undefined,
+            discountCode: undefined,
             items: cart.items.map((item) => ({
               productId: item.productId,
               quantity: item.quantity,
@@ -484,6 +495,15 @@ export default function Payment() {
         await fetchCart();
         alert('Giỏ hàng đã thay đổi về giá hoặc tồn kho. Vui lòng kiểm tra lại trước khi đặt hàng.');
         void navigate('/client/cart');
+        return;
+      }
+      if (isFulfillmentChangedError(error)) {
+        alert(
+          error instanceof Error
+            ? error.message
+            : 'Thông tin nhận hàng đã thay đổi. Vui lòng kiểm tra lại trước khi đặt hàng.',
+        );
+        void navigate('/client/checkout');
         return;
       }
       alert(

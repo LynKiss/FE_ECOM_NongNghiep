@@ -72,6 +72,15 @@ export default function Cart() {
     () => cart?.items.map((item) => item.productId) ?? [],
     [cart],
   );
+  const voucherItems = useMemo(
+    () =>
+      cart?.items.map((item) => ({
+        productId: item.productId,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+      })) ?? [],
+    [cart],
+  );
   const productIdsKey = productIds.join('|');
   const discountAmount = discountResult
     ? Number(discountResult.discountAmount)
@@ -101,6 +110,7 @@ export default function Cart() {
       const data = await fetchVouchersForCart({
         orderValue: subtotal,
         productIds,
+        items: voucherItems,
       });
       setVouchers(data);
     } catch {
@@ -108,7 +118,7 @@ export default function Cart() {
     } finally {
       setLoadingVouchers(false);
     }
-  }, [cart, subtotal, productIdsKey]);
+  }, [cart, subtotal, productIdsKey, voucherItems]);
 
   useEffect(() => {
     void loadVouchers();
@@ -126,6 +136,7 @@ export default function Cart() {
         const result = await validateVoucherCode(normalized, {
           orderValue: subtotal,
           productIds,
+          items: voucherItems,
         });
         setDiscountResult(result);
       } catch (error) {
@@ -139,7 +150,7 @@ export default function Cart() {
         setValidatingCode(false);
       }
     },
-    [cart, subtotal, productIdsKey],
+    [cart, subtotal, productIdsKey, voucherItems],
   );
 
   useEffect(() => {

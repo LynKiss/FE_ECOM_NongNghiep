@@ -87,7 +87,7 @@ const DEFAULT_STATS = [
 
 const DEFAULT_WHY_US = [
   { emoji: '✅', title: 'Hàng chính hãng 100%', desc: 'Toàn bộ sản phẩm có giấy chứng nhận và nguồn gốc rõ ràng. Cam kết không hàng giả, hàng nhái.', icon: ShieldCheck },
-  { emoji: '🚚', title: 'Giao hàng toàn quốc', desc: 'Đối tác vận chuyển uy tín, giao hàng 2–4 ngày. Miễn phí vận chuyển đơn hàng từ 500.000đ.', icon: Truck },
+  { emoji: '🚚', title: 'Nhận hàng linh hoạt', desc: 'Chọn giao đến địa chỉ hoặc nhận tại cửa hàng. Phí và thời gian dự kiến được báo rõ ở checkout.', icon: Truck },
   { emoji: '🎧', title: 'Hỗ trợ kỹ thuật', desc: 'Đội ngũ kỹ sư nông nghiệp tư vấn trực tiếp. Hotline miễn phí 1800 6863, hỗ trợ 7 ngày/tuần.', icon: HeadphonesIcon },
   { emoji: '♻️', title: 'Đổi trả dễ dàng', desc: 'Chính sách đổi trả trong 7 ngày nếu sản phẩm lỗi hoặc không đúng mô tả. Hoàn tiền 100%.', icon: RefreshCw },
 ];

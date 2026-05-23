@@ -91,7 +91,7 @@ function stripDiacritics(text: string): string {
 const FAQ_RESPONSES: Array<{ keys: string[]; response: string }> = [
   {
     keys: ['giao hàng', 'van chuyen', 'ship', 'thoi gian giao'],
-    response: '🚚 **Giao hàng**\n• Toàn quốc trong 2–4 ngày làm việc.\n• HCM/HN/ĐN: 1–2 ngày.\n• Miễn phí với đơn từ 500.000₫. Phí 25.000–45.000₫ tùy khu vực.',
+    response: '🚚 **Nhận hàng**\n• Bạn có thể chọn giao đến địa chỉ hoặc nhận tại cửa hàng khi checkout.\n• Phí, ngưỡng miễn phí và thời gian dự kiến được tính theo phương thức nhận hàng, khu vực và giá trị đơn hiện tại.\n• Hãy chọn địa chỉ nhận hàng để hệ thống báo phương thức phù hợp.',
   },
   {
     keys: ['đổi trả', 'tra hang', 'tra lai', 'hoan tra', 'doi san pham'],
