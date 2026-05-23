@@ -408,6 +408,25 @@ export default function Sidebar({ open, onClose, collapsed, onToggleCollapse }: 
     products: location.pathname.startsWith('/admin/products'),
   });
 
+  const currentPath = location.pathname.replace(/\/+$/, '') || '/';
+  const isRouteActive = (path?: string, exact = false): boolean => {
+    if (!path) return false;
+    const targetPath = path.replace(/\/+$/, '') || '/';
+    if (exact) return currentPath === targetPath;
+    return currentPath === targetPath || currentPath.startsWith(`${targetPath}/`);
+  };
+  const isChildRouteActive = (path: string): boolean => {
+    if (path === '/admin/products') return isRouteActive(path, true);
+    if (path === '/admin/products/new' && currentPath === '/admin/products/create') {
+      return true;
+    }
+    return isRouteActive(path);
+  };
+  const isStandaloneRouteActive = (path?: string): boolean => {
+    if (path === '/admin') return isRouteActive(path, true);
+    return isRouteActive(path);
+  };
+
   useEffect(() => {
     if (location.pathname.startsWith('/admin/products')) {
       setOpenGroups((current) => ({ ...current, products: true }));
@@ -485,8 +504,8 @@ export default function Sidebar({ open, onClose, collapsed, onToggleCollapse }: 
           <nav className="flex flex-col gap-0.5">
             {filteredNavItems.map((item) => {
               if (item.children) {
-                const isGroupActive = item.children.some(
-                  (child) => location.pathname === child.path,
+                const isGroupActive = item.children.some((child) =>
+                  isChildRouteActive(child.path),
                 );
                 const isOpen = openGroups[item.id] ?? false;
 
@@ -498,8 +517,8 @@ export default function Sidebar({ open, onClose, collapsed, onToggleCollapse }: 
                       onClick={onClose}
                       title={item.label}
                       className={`hidden lg:flex h-10 w-10 mx-auto items-center justify-center rounded-xl transition-all duration-200 ${isGroupActive
-                        ? 'bg-accent text-primary'
-                        : 'text-white/60 hover:bg-white/5 hover:text-white'
+                        ? 'bg-accent/95 text-primary shadow-sm shadow-accent/20'
+                        : 'text-white/65 hover:bg-white/7 hover:text-white'
                         }`}
                     >
                       <item.icon size={18} />
@@ -510,9 +529,11 @@ export default function Sidebar({ open, onClose, collapsed, onToggleCollapse }: 
                 return (
                   <div key={item.id} className="rounded-xl">
                     <div
-                      className={`flex items-center rounded-full text-sm font-medium transition-all duration-200 ${isGroupActive || isOpen
-                        ? 'bg-white/8 text-white'
-                        : 'text-white/60 hover:bg-white/5 hover:text-white'
+                      className={`flex items-center rounded-xl text-sm font-semibold transition-all duration-200 ${isGroupActive
+                        ? 'bg-white/10 text-white shadow-[inset_3px_0_0_rgba(204,231,220,0.9)]'
+                        : isOpen
+                          ? 'bg-white/6 text-white/90'
+                          : 'text-white/65 hover:bg-white/5 hover:text-white'
                         }`}
                     >
                       <NavLink
@@ -520,8 +541,8 @@ export default function Sidebar({ open, onClose, collapsed, onToggleCollapse }: 
                         onClick={onClose}
                         className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5"
                       >
-                        <item.icon size={18} />
-                        <span>{item.label}</span>
+                        <item.icon size={18} className={isGroupActive ? 'text-accent' : ''} />
+                        <span className="truncate">{item.label}</span>
                       </NavLink>
                       <button
                         type="button"
@@ -541,23 +562,34 @@ export default function Sidebar({ open, onClose, collapsed, onToggleCollapse }: 
                     </div>
 
                     {isOpen ? (
-                      <div className="mt-1 space-y-0.5 pl-4">
-                        {item.children.map((child) => (
-                          <NavLink
-                            key={child.id}
-                            to={child.path}
-                            onClick={onClose}
-                            className={({ isActive }) =>
-                              `flex items-center gap-2.5 rounded-xl px-3 py-1.5 text-xs transition ${isActive
-                                ? 'bg-accent font-bold text-primary shadow-sm shadow-accent/20'
-                                : 'text-white/60 hover:bg-white/5 hover:text-white'
-                              }`
-                            }
-                          >
-                            <span className="h-1 w-1 shrink-0 rounded-full bg-current opacity-60" />
-                            <span>{child.label}</span>
-                          </NavLink>
-                        ))}
+                      <div className="relative mt-1.5 space-y-0.5 pl-5 before:absolute before:left-2.5 before:top-1 before:h-[calc(100%-0.5rem)] before:w-px before:bg-white/10">
+                        {item.children.map((child) => {
+                          const childActive = isChildRouteActive(child.path);
+
+                          return (
+                            <NavLink
+                              key={child.id}
+                              to={child.path}
+                              onClick={onClose}
+                              className={`group relative flex min-h-8 items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs transition ${childActive
+                                ? 'bg-white/12 font-bold text-accent'
+                                : 'text-white/58 hover:bg-white/6 hover:text-white'
+                              }`}
+                            >
+                              <span
+                                className={`absolute -left-[13px] top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full ring-2 ring-sidebar-bg ${childActive
+                                  ? 'bg-accent'
+                                  : 'bg-white/30 group-hover:bg-white/55'
+                                }`}
+                              />
+                              <span
+                                className={`absolute left-0 top-1.5 h-[calc(100%-0.75rem)] w-0.5 rounded-full ${childActive ? 'bg-accent' : 'bg-transparent'
+                                  }`}
+                              />
+                              <span className="min-w-0 flex-1 leading-snug">{child.label}</span>
+                            </NavLink>
+                          );
+                        })}
                       </div>
                     ) : null}
                   </div>
@@ -571,12 +603,10 @@ export default function Sidebar({ open, onClose, collapsed, onToggleCollapse }: 
                     to={item.path ?? '/admin'}
                     onClick={onClose}
                     title={item.label}
-                    className={({ isActive }) =>
-                      `hidden lg:flex h-10 w-10 mx-auto items-center justify-center rounded-xl transition-all duration-200 ${isActive
-                        ? 'bg-accent text-primary'
-                        : 'text-white/60 hover:bg-white/5 hover:text-white'
-                      }`
-                    }
+                    className={`hidden lg:flex h-10 w-10 mx-auto items-center justify-center rounded-xl transition-all duration-200 ${isStandaloneRouteActive(item.path)
+                      ? 'bg-accent/95 text-primary shadow-sm shadow-accent/20'
+                      : 'text-white/65 hover:bg-white/7 hover:text-white'
+                      }`}
                   >
                     <item.icon size={18} />
                   </NavLink>
@@ -588,15 +618,13 @@ export default function Sidebar({ open, onClose, collapsed, onToggleCollapse }: 
                   key={item.id}
                   to={item.path ?? '/admin'}
                   onClick={onClose}
-                  className={({ isActive }) =>
-                    `flex items-center gap-3 rounded-full px-3 py-2.5 text-sm font-medium transition-all duration-200 ${isActive
-                      ? 'bg-accent font-bold text-primary shadow-lg shadow-accent/20'
-                      : 'text-white/60 hover:bg-white/5 hover:text-white active:scale-95'
-                    }`
-                  }
+                  className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 ${isStandaloneRouteActive(item.path)
+                    ? 'bg-accent/95 font-bold text-primary shadow-sm shadow-accent/20'
+                    : 'text-white/65 hover:bg-white/5 hover:text-white active:scale-95'
+                    }`}
                 >
                   <item.icon size={18} />
-                  <span>{item.label}</span>
+                  <span className="truncate">{item.label}</span>
                 </NavLink>
               );
             })}
