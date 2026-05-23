@@ -517,7 +517,7 @@ export default function Sidebar({ open, onClose, collapsed, onToggleCollapse }: 
                       onClick={onClose}
                       title={item.label}
                       className={`hidden lg:flex h-10 w-10 mx-auto items-center justify-center rounded-xl transition-all duration-200 ${isGroupActive
-                        ? 'bg-accent/95 text-primary shadow-sm shadow-accent/20'
+                        ? 'bg-[#B7D88A] text-[#123326] shadow-sm shadow-[#B7D88A]/20'
                         : 'text-white/65 hover:bg-white/7 hover:text-white'
                         }`}
                     >
@@ -530,7 +530,7 @@ export default function Sidebar({ open, onClose, collapsed, onToggleCollapse }: 
                   <div key={item.id} className="rounded-xl">
                     <div
                       className={`flex items-center rounded-xl text-sm font-semibold transition-all duration-200 ${isGroupActive
-                        ? 'bg-white/10 text-white shadow-[inset_3px_0_0_rgba(204,231,220,0.9)]'
+                        ? 'bg-white/10 text-white shadow-[inset_3px_0_0_#D6B85A]'
                         : isOpen
                           ? 'bg-white/6 text-white/90'
                           : 'text-white/65 hover:bg-white/5 hover:text-white'
@@ -541,7 +541,7 @@ export default function Sidebar({ open, onClose, collapsed, onToggleCollapse }: 
                         onClick={onClose}
                         className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5"
                       >
-                        <item.icon size={18} className={isGroupActive ? 'text-accent' : ''} />
+                        <item.icon size={18} className={isGroupActive ? 'text-[#B7D88A]' : ''} />
                         <span className="truncate">{item.label}</span>
                       </NavLink>
                       <button
@@ -572,18 +572,18 @@ export default function Sidebar({ open, onClose, collapsed, onToggleCollapse }: 
                               to={child.path}
                               onClick={onClose}
                               className={`group relative flex min-h-8 items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs transition ${childActive
-                                ? 'bg-white/12 font-bold text-accent'
+                                ? 'bg-[#B7D88A]/14 font-bold text-[#DCECC1]'
                                 : 'text-white/58 hover:bg-white/6 hover:text-white'
                               }`}
                             >
                               <span
                                 className={`absolute -left-[13px] top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full ring-2 ring-sidebar-bg ${childActive
-                                  ? 'bg-accent'
+                                  ? 'bg-[#D6B85A]'
                                   : 'bg-white/30 group-hover:bg-white/55'
                                 }`}
                               />
                               <span
-                                className={`absolute left-0 top-1.5 h-[calc(100%-0.75rem)] w-0.5 rounded-full ${childActive ? 'bg-accent' : 'bg-transparent'
+                                className={`absolute left-0 top-1.5 h-[calc(100%-0.75rem)] w-0.5 rounded-full ${childActive ? 'bg-[#D6B85A]' : 'bg-transparent'
                                   }`}
                               />
                               <span className="min-w-0 flex-1 leading-snug">{child.label}</span>
@@ -604,7 +604,7 @@ export default function Sidebar({ open, onClose, collapsed, onToggleCollapse }: 
                     onClick={onClose}
                     title={item.label}
                     className={`hidden lg:flex h-10 w-10 mx-auto items-center justify-center rounded-xl transition-all duration-200 ${isStandaloneRouteActive(item.path)
-                      ? 'bg-accent/95 text-primary shadow-sm shadow-accent/20'
+                      ? 'bg-[#B7D88A] text-[#123326] shadow-sm shadow-[#B7D88A]/20'
                       : 'text-white/65 hover:bg-white/7 hover:text-white'
                       }`}
                   >
@@ -619,7 +619,7 @@ export default function Sidebar({ open, onClose, collapsed, onToggleCollapse }: 
                   to={item.path ?? '/admin'}
                   onClick={onClose}
                   className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 ${isStandaloneRouteActive(item.path)
-                    ? 'bg-accent/95 font-bold text-primary shadow-sm shadow-accent/20'
+                    ? 'bg-[#B7D88A] font-bold text-[#123326] shadow-sm shadow-[#B7D88A]/20'
                     : 'text-white/65 hover:bg-white/5 hover:text-white active:scale-95'
                     }`}
                 >
