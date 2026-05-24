@@ -1,5 +1,6 @@
 import { Editor } from '@tinymce/tinymce-react';
 import { apiClient } from '../../lib/api';
+import { useToast } from '../../hooks/useToast';
 
 type RichTextEditorProps = {
   label: string;
@@ -16,6 +17,8 @@ export default function RichTextEditor({
   isVietnamese,
   imageUploadPath = '/uploads/rich-text-images',
 }: RichTextEditorProps) {
+  const { showToast } = useToast();
+
   async function uploadEditorImage(file: File) {
     const formData = new FormData();
     formData.append('file', file);
@@ -73,7 +76,11 @@ export default function RichTextEditor({
                         : isVietnamese
                           ? 'Không thể tải ảnh lên.'
                           : 'Unable to upload image.';
-                    window.alert(message);
+                    showToast({
+                      tone: 'error',
+                      title: isVietnamese ? 'Upload ảnh thất bại' : 'Image upload failed',
+                      description: message,
+                    });
                   });
               };
               input.click();

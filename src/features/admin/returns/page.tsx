@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Package, RefreshCw, X, Check, AlertTriangle, Truck } from 'lucide-react';
 import { apiClient } from '../../../lib/api';
+import { showToast } from '../../../lib/toast-store';
 
 type ReturnStatus = 'requested' | 'approved' | 'rejected' | 'received' | 'inspected' | 'refunded';
 type InspectionStatus = 'pending' | 'usable' | 'damaged' | 'return_to_supplier';
@@ -79,7 +80,11 @@ export default function ReturnsAdminPage() {
       await apiClient.patch(`/returns/${returnId}/status`, { status: nextStatus });
       await load();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Không cập nhật được trạng thái');
+      showToast({
+        tone: 'error',
+        title: 'Không cập nhật được trạng thái',
+        description: err instanceof Error ? err.message : 'Vui lòng thử lại.',
+      });
     } finally {
       setBusyId(null);
     }
@@ -97,11 +102,11 @@ export default function ReturnsAdminPage() {
       setInspectModal(null);
       await load();
     } catch (err) {
-      alert(
-        err instanceof Error
-          ? err.message
-          : 'Không thể inspect return — kiểm tra log',
-      );
+      showToast({
+        tone: 'error',
+        title: 'Không thể kiểm tra hàng trả',
+        description: err instanceof Error ? err.message : 'Vui lòng kiểm tra log backend.',
+      });
     } finally {
       setSubmitting(false);
     }

@@ -3,7 +3,6 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   AlertTriangle,
   ArrowRight,
-  BadgePercent,
   CheckCircle2,
   Leaf,
   Minus,
@@ -17,18 +16,16 @@ import {
 } from 'lucide-react';
 import { type CartItem, useCart } from '../../hooks/useCart';
 import { useClientSession } from '../../hooks/useClientSession';
+import VoucherSelectorModal from '../../components/client/VoucherSelectorModal';
 import {
   type DiscountResult,
   type Voucher,
   fetchVouchersForCart,
-  getVoucherProgress,
   money,
   sortVouchers,
   validateVoucherCode,
-  voucherExpiryDateTimeLabel,
-  voucherExpiryLabel,
-  voucherMissingAmount,
-  voucherRemainingUsesLabel,
+  voucherScopeLabel,
+  voucherShortMeta,
   voucherSavings,
   voucherValueLabel,
 } from '../../lib/vouchers';
@@ -66,6 +63,7 @@ export default function Cart() {
   const [vouchers, setVouchers] = useState<Voucher[]>([]);
   const [loadingVouchers, setLoadingVouchers] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
+  const [voucherModalOpen, setVoucherModalOpen] = useState(false);
 
   const subtotal = Number(cart?.totalAmount ?? 0);
   const productIds = useMemo(
@@ -97,7 +95,6 @@ export default function Cart() {
   const bestVoucher = sortedVouchers.find(
     (voucher) => voucher.eligible && voucherSavings(voucher) > 0,
   );
-  const displayedVouchers = sortedVouchers.slice(0, 4);
 
   const loadVouchers = useCallback(async () => {
     if (!cart || cart.items.length === 0) {
@@ -227,6 +224,7 @@ export default function Cart() {
   }
 
   return (
+    <>
     <div className="client-surface min-h-[80vh]">
       <div className="mx-auto max-w-6xl px-4 py-10 lg:px-6">
         <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -435,9 +433,20 @@ export default function Cart() {
               </div>
 
               <div className="client-card p-5">
-                <p className="mb-3 flex items-center gap-2 text-sm font-black text-[#1E3932]">
-                  <Tag size={15} /> Mã giảm giá
-                </p>
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <p className="flex items-center gap-2 text-sm font-black text-[#1E3932]">
+                    <Tag size={15} /> Mã giảm giá
+                  </p>
+                  {session ? (
+                    <button
+                      type="button"
+                      onClick={() => setVoucherModalOpen(true)}
+                      className="text-xs font-black text-[#006241] hover:underline"
+                    >
+                      Chọn voucher
+                    </button>
+                  ) : null}
+                </div>
 
                 {discountResult ? (
                   <div className="rounded-xl border border-[#006241]/15 bg-[#d4e9e2]/45 p-4">
@@ -451,12 +460,21 @@ export default function Cart() {
                           {formatPrice(discountAmount)}
                         </p>
                       </div>
-                      <button
-                        onClick={clearDiscount}
-                        className="text-xs font-bold text-gray-400 hover:text-red-500"
-                      >
-                        Xóa
-                      </button>
+                      <div className="flex shrink-0 flex-col items-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setVoucherModalOpen(true)}
+                          className="text-xs font-black text-[#006241] hover:underline"
+                        >
+                          Đổi
+                        </button>
+                        <button
+                          onClick={clearDiscount}
+                          className="text-xs font-bold text-gray-400 hover:text-red-500"
+                        >
+                          Xóa
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ) : (
@@ -472,7 +490,7 @@ export default function Cart() {
                             void validateAndApply(discountCode);
                           }
                         }}
-                        placeholder="Nhập mã hoặc chọn voucher bên dưới"
+                        placeholder="Nhập mã voucher"
                         className="client-input min-w-0 flex-1 px-4 py-2.5 text-sm"
                       />
                       <button
@@ -491,39 +509,51 @@ export default function Cart() {
                   </>
                 )}
 
-                <div className="mt-4 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-black uppercase tracking-[0.16em] text-gray-400">
-                      Voucher khả dụng
-                    </p>
-                    <Link
-                      to="/client/vouchers"
-                      className="text-xs font-bold text-[#006241] hover:underline"
-                    >
-                      Xem tất cả
-                    </Link>
-                  </div>
-                  {loadingVouchers ? (
-                    <div className="rounded-xl bg-[#edebe9] px-4 py-5 text-center text-xs font-semibold text-gray-500">
-                      Đang tìm voucher phù hợp...
-                    </div>
-                  ) : displayedVouchers.length ? (
-                    displayedVouchers.map((voucher) => (
-                      <div key={voucher.id}>
-                        <VoucherMiniCard
-                          voucher={voucher}
-                          subtotal={subtotal}
-                          selected={discountResult?.code === voucher.code}
-                          onApply={() => void validateAndApply(voucher.code)}
-                        />
+                {session ? (
+                  <div className="mt-4 rounded-xl border border-dashed border-[#006241]/25 bg-[#f4f8f5] p-3">
+                    {loadingVouchers ? (
+                      <p className="text-xs font-semibold text-gray-500">Đang tìm voucher phù hợp...</p>
+                    ) : bestVoucher ? (
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="truncate text-sm font-black text-[#1E3932]">{bestVoucher.code}</p>
+                            <span className="rounded-full bg-[#d4e9e2] px-2 py-0.5 text-[10px] font-black text-[#006241]">
+                              {voucherValueLabel(bestVoucher)}
+                            </span>
+                            <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-black text-[#006241]">
+                              {voucherScopeLabel(bestVoucher)}
+                            </span>
+                          </div>
+                          <p className="mt-1 truncate text-xs font-semibold text-gray-500">
+                            Tiết kiệm {money(voucherSavings(bestVoucher))} · {voucherShortMeta(bestVoucher)}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => void validateAndApply(bestVoucher.code)}
+                          disabled={discountResult?.code === bestVoucher.code}
+                          className="shrink-0 rounded-full bg-[#00754A] px-4 py-2 text-xs font-black text-white disabled:bg-gray-200 disabled:text-gray-500"
+                        >
+                          {discountResult?.code === bestVoucher.code ? 'Đã chọn' : 'Áp dụng'}
+                        </button>
                       </div>
-                    ))
-                  ) : (
-                    <div className="rounded-xl bg-[#edebe9] px-4 py-5 text-center text-xs font-semibold text-gray-500">
-                      Chưa có voucher phù hợp với giỏ hàng này.
-                    </div>
-                  )}
-                </div>
+                    ) : (
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-xs font-semibold text-gray-500">
+                          Chưa có voucher dùng được. Mở danh sách để xem điều kiện còn thiếu.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setVoucherModalOpen(true)}
+                          className="shrink-0 text-xs font-black text-[#006241] hover:underline"
+                        >
+                          Xem
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ) : null}
               </div>
 
               <div className="client-card p-5">
@@ -576,80 +606,15 @@ export default function Cart() {
         )}
       </div>
     </div>
-  );
-}
-
-function VoucherMiniCard({
-  voucher,
-  subtotal,
-  selected,
-  onApply,
-}: {
-  voucher: Voucher;
-  subtotal: number;
-  selected: boolean;
-  onApply: () => void;
-}) {
-  const eligible = Boolean(voucher.eligible);
-  const progress = getVoucherProgress(voucher, subtotal);
-  const missingAmount = voucherMissingAmount(voucher);
-
-  return (
-    <div
-      className={`overflow-hidden rounded-xl border ${
-        selected
-          ? 'border-[#006241] bg-[#d4e9e2]/45'
-          : eligible
-            ? 'border-[#006241]/15 bg-white'
-            : 'border-black/6 bg-[#fbfaf7]'
-      }`}
-    >
-      <div className="flex gap-3 p-3">
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#006241] text-white">
-          <BadgePercent size={20} />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              <p className="text-sm font-black text-[#1E3932]">{voucher.code}</p>
-              <p className="line-clamp-1 text-xs font-semibold text-gray-500">
-                {voucher.name}
-              </p>
-            </div>
-            <span className="rounded-full bg-[#d4e9e2] px-2 py-1 text-xs font-black text-[#006241]">
-              {voucherValueLabel(voucher)}
-            </span>
-          </div>
-          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-black/5">
-            <div
-              className="h-full rounded-full bg-[#00754A]"
-              style={{ width: `${progress}%` }}
-            />
-          </div>
-          <div className="mt-2 flex items-center justify-between gap-2">
-            <p className="text-[11px] font-semibold text-gray-500">
-              {eligible
-                ? `Giảm ${money(voucherSavings(voucher))}`
-                : `Mua thêm ${money(missingAmount)}`}
-            </p>
-            <button
-              type="button"
-              onClick={onApply}
-              disabled={!eligible || selected}
-              className="client-pill-primary px-3 py-1.5 text-[11px] font-black disabled:border-gray-200 disabled:bg-gray-200 disabled:text-gray-500"
-            >
-              {selected ? 'Đã chọn' : eligible ? 'Áp dụng' : 'Chưa đủ'}
-            </button>
-          </div>
-          <p className="mt-1 text-[10px] font-semibold text-gray-400">
-            Hạn: {voucherExpiryLabel(voucher.expiresAt)}
-          </p>
-          <p className="mt-1 text-[10px] font-semibold text-gray-400">
-            {voucherExpiryDateTimeLabel(voucher.expiresAt)} · {voucherRemainingUsesLabel(voucher)}
-            {voucher.isSaved ? ' · Đã nhận' : ''}
-          </p>
-        </div>
-      </div>
-    </div>
+    <VoucherSelectorModal
+      open={voucherModalOpen}
+      vouchers={vouchers}
+      loading={loadingVouchers}
+      subtotal={subtotal}
+      selectedCode={discountResult?.code}
+      onApply={(code) => void validateAndApply(code)}
+      onClose={() => setVoucherModalOpen(false)}
+    />
+    </>
   );
 }

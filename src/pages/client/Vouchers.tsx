@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useCart } from '../../hooks/useCart';
 import { useClientSession } from '../../hooks/useClientSession';
+import { useToast } from '../../hooks/useToast';
 import {
   type Voucher,
   fetchVouchersForCart,
@@ -20,11 +21,10 @@ import {
   money,
   saveVoucherToWallet,
   sortVouchers,
-  voucherExpiryDateTimeLabel,
-  voucherExpiryLabel,
   voucherMinOrder,
   voucherMissingAmount,
-  voucherRemainingUsesLabel,
+  voucherScopeLabel,
+  voucherShortMeta,
   voucherSavings,
   voucherValueLabel,
 } from '../../lib/vouchers';
@@ -35,6 +35,7 @@ export default function Vouchers() {
   const navigate = useNavigate();
   const { session } = useClientSession();
   const { cart } = useCart();
+  const { showToast } = useToast();
   const [vouchers, setVouchers] = useState<Voucher[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<VoucherFilter>('all');
@@ -117,6 +118,13 @@ export default function Vouchers() {
         items: voucherItems,
       });
       setVouchers(data);
+      showToast({ tone: 'success', title: 'Đã lưu voucher', description: voucher.code });
+    } catch (error) {
+      showToast({
+        tone: 'error',
+        title: 'Không lưu được voucher',
+        description: error instanceof Error ? error.message : 'Voucher không còn khả dụng.',
+      });
     } finally {
       setSavingId(null);
     }
@@ -292,12 +300,10 @@ function VoucherHuntCard({
 
         <div className="mt-4 grid grid-cols-2 gap-3">
           <InfoBox
-            label="Giảm dự kiến"
+            label="Tiết kiệm"
             value={eligible ? money(voucherSavings(voucher)) : 'Chưa đủ'}
           />
-          <InfoBox label="Hạn dùng" value={voucherExpiryLabel(voucher.expiresAt)} />
-          <InfoBox label="Khung giờ hết hạn" value={voucherExpiryDateTimeLabel(voucher.expiresAt)} />
-          <InfoBox label="Số lượt" value={voucherRemainingUsesLabel(voucher)} />
+          <InfoBox label="Phạm vi" value={voucherScopeLabel(voucher)} />
         </div>
 
         <div className="mt-4">
@@ -318,6 +324,10 @@ function VoucherHuntCard({
             />
           </div>
         </div>
+
+        <p className="mt-3 line-clamp-1 text-xs font-semibold text-gray-400">
+          {voucherShortMeta(voucher)}
+        </p>
 
         {voucher.isPrivate ? (
           <div className="mt-4 flex items-center gap-2 rounded-xl bg-[#d4e9e2] px-4 py-3 text-xs font-bold text-[#006241]">

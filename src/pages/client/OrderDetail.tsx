@@ -341,7 +341,11 @@ export default function OrderDetail() {
       await clientApi.patch(`/orders/${id}/confirm-received`);
       await refreshOrder(id, false);
     } catch (error) {
-      alert(error instanceof Error ? error.message : 'Không thể xác nhận. Vui lòng thử lại.');
+      showToast({
+        tone: 'error',
+        title: 'Không thể xác nhận đã nhận hàng',
+        description: error instanceof Error ? error.message : 'Vui lòng thử lại.',
+      });
     } finally {
       setConfirmingReceived(false);
     }

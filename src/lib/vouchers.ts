@@ -108,7 +108,8 @@ export function money(value: string | number | null | undefined) {
 }
 
 export function voucherValueLabel(voucher: Pick<Voucher, 'type' | 'value'>) {
-  if (voucher.type === 'percent') {
+  const type = String(voucher.type ?? '').toLowerCase();
+  if (type === 'percent' || type === 'percentage') {
     return `-${Number(voucher.value).toLocaleString('vi-VN')}%`;
   }
 
@@ -187,4 +188,21 @@ export function voucherRemainingUsesLabel(voucher: Voucher) {
   return `Còn ${Math.max(0, Number(voucher.remainingUses)).toLocaleString(
     'vi-VN',
   )} lượt`;
+}
+
+export function voucherScopeLabel(voucher: Pick<Voucher, 'appliesTo'>) {
+  const scope = String(voucher.appliesTo ?? '').toLowerCase();
+  if (scope === 'product') return 'Theo sản phẩm';
+  if (scope === 'category') return 'Theo danh mục';
+  return 'Toàn đơn';
+}
+
+export function voucherShortMeta(voucher: Voucher) {
+  return [
+    `Hạn ${voucherExpiryLabel(voucher.expiresAt)}`,
+    voucherRemainingUsesLabel(voucher),
+    voucher.isSaved ? 'Đã nhận' : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
 }

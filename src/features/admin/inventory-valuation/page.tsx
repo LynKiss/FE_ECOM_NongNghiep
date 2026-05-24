@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Coins, RefreshCw, Search, Package, Download } from 'lucide-react';
 import { apiClient } from '../../../lib/api';
+import { showToast } from '../../../lib/toast-store';
 
 const API_BASE_URL =
   (import.meta as any).env?.VITE_API_BASE_URL?.replace(/\/+$/, '') ?? 'http://localhost:8000/api/v1';
@@ -31,7 +32,13 @@ function downloadFromUrl(path: string, filename: string) {
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     })
-    .catch(() => alert('Không tải được file. Vui lòng thử lại.'));
+    .catch(() =>
+      showToast({
+        tone: 'error',
+        title: 'Không tải được file',
+        description: 'Vui lòng thử lại.',
+      }),
+    );
 }
 
 interface ValuationItem {

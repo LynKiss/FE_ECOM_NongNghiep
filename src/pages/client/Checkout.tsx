@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
-import { AlertTriangle, MapPin, Plus, Check, ChevronRight, ArrowLeft, Leaf, Truck, BadgePercent, CheckCircle2, Tag } from 'lucide-react';
+import { AlertTriangle, MapPin, Plus, Check, ChevronRight, ArrowLeft, Leaf, Truck, CheckCircle2, Tag } from 'lucide-react';
 
 const VIETNAM_PROVINCES = [
   'An Giang','Bà Rịa - Vũng Tàu','Bắc Giang','Bắc Kạn','Bạc Liêu','Bắc Ninh','Bến Tre','Bình Định','Bình Dương','Bình Phước',
@@ -14,17 +14,15 @@ const VIETNAM_PROVINCES = [
 import { clientApi } from '../../lib/client-api';
 import { useCart } from '../../hooks/useCart';
 import { useClientSession } from '../../hooks/useClientSession';
+import { useToast } from '../../hooks/useToast';
+import VoucherSelectorModal from '../../components/client/VoucherSelectorModal';
 import {
   type Voucher,
   fetchVouchersForCart,
-  getVoucherProgress,
   money,
   sortVouchers,
   validateVoucherCode,
-  voucherExpiryDateTimeLabel,
-  voucherExpiryLabel,
-  voucherMissingAmount,
-  voucherRemainingUsesLabel,
+  voucherShortMeta,
   voucherSavings,
   voucherValueLabel,
 } from '../../lib/vouchers';
@@ -77,6 +75,7 @@ export default function Checkout() {
   const location = useLocation();
   const { session } = useClientSession();
   const { cart, fetchCart } = useCart();
+  const { showToast } = useToast();
 
   const state = (location.state as { discountCode?: string; discountAmount?: number } | null) ?? {};
   const [appliedDiscountCode, setAppliedDiscountCode] = useState(state.discountCode ?? '');
@@ -86,6 +85,7 @@ export default function Checkout() {
   const [validatingVoucher, setValidatingVoucher] = useState(false);
   const [vouchers, setVouchers] = useState<Voucher[]>([]);
   const [loadingVouchers, setLoadingVouchers] = useState(false);
+  const [voucherModalOpen, setVoucherModalOpen] = useState(false);
 
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
@@ -168,7 +168,9 @@ export default function Checkout() {
     [cart],
   );
   const sortedVouchers = useMemo(() => sortVouchers(vouchers), [vouchers]);
-  const quickVouchers = sortedVouchers.slice(0, 3);
+  const bestVoucher = sortedVouchers.find(
+    (voucher) => voucher.eligible && voucherSavings(voucher) > 0,
+  );
   const selectedAddress = addresses.find((address) => address.id === selectedAddressId);
   const quoteLocation = session
     ? {
@@ -318,7 +320,11 @@ export default function Checkout() {
       setAddingAddress(false);
       setForm({ recipientName: '', phone: '', addressLine: '', ward: '', district: '', province: '', label: '' });
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Không thể lưu địa chỉ');
+      showToast({
+        tone: 'error',
+        title: 'Không thể lưu địa chỉ',
+        description: err instanceof Error ? err.message : 'Vui lòng kiểm tra lại thông tin địa chỉ.',
+      });
     } finally {
       setSavingAddress(false);
     }
@@ -336,19 +342,19 @@ export default function Checkout() {
     try {
       const latestCart = await fetchCart();
       if (!latestCart?.items.length) {
-        alert('Giỏ hàng trống hoặc đã thay đổi. Vui lòng kiểm tra lại.');
+        showToast({ tone: 'warning', title: 'Giỏ hàng đã thay đổi', description: 'Vui lòng kiểm tra lại giỏ hàng trước khi thanh toán.' });
         void navigate('/client/cart');
         return;
       }
       if (latestCart.validationStatus === 'blocked') {
-        alert('Có sản phẩm hết hàng, ngừng bán hoặc vượt tồn kho. Vui lòng cập nhật giỏ hàng trước khi thanh toán.');
+        showToast({ tone: 'warning', title: 'Giỏ hàng cần cập nhật', description: 'Có sản phẩm hết hàng, ngừng bán hoặc vượt tồn kho.' });
         void navigate('/client/cart');
         return;
       }
 
       nextSubtotal = Number(latestCart.totalAmount ?? 0);
       if (Math.abs(nextSubtotal - subtotal) > 0.01) {
-        alert('Giá hoặc số lượng trong giỏ hàng đã thay đổi. Vui lòng xác nhận lại trước khi thanh toán.');
+        showToast({ tone: 'warning', title: 'Giá hoặc số lượng đã thay đổi', description: 'Vui lòng xác nhận lại giỏ hàng trước khi thanh toán.' });
         void navigate('/client/cart');
         return;
       }
@@ -360,7 +366,7 @@ export default function Checkout() {
       });
       const latestSelected = latestMethods.find((method) => method.id === selectedDeliveryId);
       if (!latestSelected?.eligible) {
-        alert('Phương thức nhận hàng đã thay đổi hoặc không còn phù hợp. Vui lòng chọn lại.');
+        showToast({ tone: 'warning', title: 'Phương thức nhận hàng không còn phù hợp', description: 'Vui lòng chọn lại phương thức nhận hàng.' });
         setDeliveryMethods(latestMethods);
         setSelectedDeliveryId(
           latestMethods.find((method) => method.isDefault && method.eligible)?.id ??
@@ -370,7 +376,7 @@ export default function Checkout() {
         return;
       }
       if (Math.abs(Number(latestSelected.shippingFee ?? 0) - shipping) > 0.01) {
-        alert('Phí nhận hàng đã thay đổi. Vui lòng kiểm tra lại trước khi thanh toán.');
+        showToast({ tone: 'warning', title: 'Phí nhận hàng đã thay đổi', description: 'Vui lòng kiểm tra lại trước khi thanh toán.' });
         setDeliveryMethods(latestMethods);
         return;
       }
@@ -378,7 +384,11 @@ export default function Checkout() {
       nextShipping = Number(latestSelected.shippingFee ?? 0);
       nextTotal = Math.max(0, nextSubtotal - appliedDiscountAmount) + nextShipping;
     } catch (error) {
-      alert(error instanceof Error ? error.message : 'Không thể kiểm tra lại giỏ hàng và phương thức nhận hàng.');
+      showToast({
+        tone: 'error',
+        title: 'Không thể kiểm tra checkout',
+        description: error instanceof Error ? error.message : 'Không thể kiểm tra lại giỏ hàng và phương thức nhận hàng.',
+      });
       return;
     } finally {
       setContinuing(false);
@@ -483,6 +493,7 @@ export default function Checkout() {
   };
 
   return (
+    <>
     <div className="client-surface min-h-[80vh]">
       <div className="mx-auto max-w-5xl px-4 py-10 lg:px-6">
         {/* Steps */}
@@ -848,9 +859,20 @@ export default function Checkout() {
           {/* Order summary */}
           <div className="space-y-4">
             <div className="client-card p-5">
-              <p className="mb-3 flex items-center gap-2 text-sm font-black text-[#1E3932]">
-                <Tag size={15} /> Voucher cho đơn này
-              </p>
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <p className="flex items-center gap-2 text-sm font-black text-[#1E3932]">
+                  <Tag size={15} /> Voucher cho đơn này
+                </p>
+                {session ? (
+                  <button
+                    type="button"
+                    onClick={() => setVoucherModalOpen(true)}
+                    className="text-xs font-black text-[#006241] hover:underline"
+                  >
+                    Chọn voucher
+                  </button>
+                ) : null}
+              </div>
 
               {appliedDiscountCode ? (
                 <div className="mb-3 rounded-xl border border-[#006241]/15 bg-[#d4e9e2]/45 p-4">
@@ -863,18 +885,27 @@ export default function Checkout() {
                         Đang giảm {formatPrice(appliedDiscountAmount)}
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAppliedDiscountCode('');
-                        setAppliedDiscountAmount(0);
-                        setVoucherInput('');
-                        setVoucherError('');
-                      }}
-                      className="text-xs font-bold text-gray-400 hover:text-red-500"
-                    >
-                      Đổi mã
-                    </button>
+                    <div className="flex shrink-0 flex-col items-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setVoucherModalOpen(true)}
+                        className="text-xs font-black text-[#006241] hover:underline"
+                      >
+                        Đổi
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAppliedDiscountCode('');
+                          setAppliedDiscountAmount(0);
+                          setVoucherInput('');
+                          setVoucherError('');
+                        }}
+                        className="text-xs font-bold text-gray-400 hover:text-red-500"
+                      >
+                        Xóa
+                      </button>
+                    </div>
                   </div>
                 </div>
               ) : null}
@@ -919,28 +950,48 @@ export default function Checkout() {
                 </p>
               ) : null}
 
-              <div className="mt-4 space-y-2">
-                {!session ? null : loadingVouchers ? (
-                  <div className="rounded-xl bg-[#edebe9] px-4 py-5 text-center text-xs font-semibold text-gray-500">
-                    Đang gợi ý voucher...
-                  </div>
-                ) : quickVouchers.length ? (
-                  quickVouchers.map((voucher) => (
-                    <div key={voucher.id}>
-                      <CheckoutVoucherCard
-                        voucher={voucher}
-                        subtotal={subtotal}
-                        selected={appliedDiscountCode === voucher.code}
-                        onApply={() => void applyVoucher(voucher.code)}
-                      />
+              {session ? (
+                <div className="mt-4 rounded-xl border border-dashed border-[#006241]/25 bg-[#f4f8f5] p-3">
+                  {loadingVouchers ? (
+                    <p className="text-xs font-semibold text-gray-500">Đang gợi ý voucher...</p>
+                  ) : bestVoucher ? (
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="truncate text-sm font-black text-[#1E3932]">{bestVoucher.code}</p>
+                          <span className="rounded-full bg-[#d4e9e2] px-2 py-0.5 text-[10px] font-black text-[#006241]">
+                            {voucherValueLabel(bestVoucher)}
+                          </span>
+                        </div>
+                        <p className="mt-1 truncate text-xs font-semibold text-gray-500">
+                          Tiết kiệm {money(voucherSavings(bestVoucher))} · {voucherShortMeta(bestVoucher)}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void applyVoucher(bestVoucher.code)}
+                        disabled={appliedDiscountCode === bestVoucher.code}
+                        className="shrink-0 rounded-full bg-[#00754A] px-4 py-2 text-xs font-black text-white disabled:bg-gray-200 disabled:text-gray-500"
+                      >
+                        {appliedDiscountCode === bestVoucher.code ? 'Đã chọn' : 'Áp dụng'}
+                      </button>
                     </div>
-                  ))
-                ) : (
-                  <div className="rounded-xl bg-[#edebe9] px-4 py-5 text-center text-xs font-semibold text-gray-500">
-                    Chưa có voucher phù hợp.
-                  </div>
-                )}
-              </div>
+                  ) : (
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-xs font-semibold text-gray-500">
+                        Chưa có voucher dùng được với đơn này.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setVoucherModalOpen(true)}
+                        className="shrink-0 text-xs font-black text-[#006241] hover:underline"
+                      >
+                        Xem
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : null}
             </div>
 
             <div className="client-card p-5">
@@ -1004,80 +1055,15 @@ export default function Checkout() {
         </div>
       </div>
     </div>
-  );
-}
-
-function CheckoutVoucherCard({
-  voucher,
-  subtotal,
-  selected,
-  onApply,
-}: {
-  voucher: Voucher;
-  subtotal: number;
-  selected: boolean;
-  onApply: () => void;
-}) {
-  const eligible = Boolean(voucher.eligible);
-  const progress = getVoucherProgress(voucher, subtotal);
-  const missingAmount = voucherMissingAmount(voucher);
-
-  return (
-    <div
-      className={`rounded-xl border p-3 ${
-        selected
-          ? 'border-[#006241] bg-[#d4e9e2]/45'
-          : eligible
-            ? 'border-[#006241]/15 bg-white'
-            : 'border-black/6 bg-[#fbfaf7]'
-      }`}
-    >
-      <div className="flex gap-3">
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#006241] text-white">
-          <BadgePercent size={18} />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              <p className="text-sm font-black text-[#1E3932]">{voucher.code}</p>
-              <p className="line-clamp-1 text-xs font-semibold text-gray-500">
-                {voucher.name}
-              </p>
-            </div>
-            <span className="rounded-full bg-[#d4e9e2] px-2 py-1 text-[11px] font-black text-[#006241]">
-              {voucherValueLabel(voucher)}
-            </span>
-          </div>
-          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-black/5">
-            <div
-              className="h-full rounded-full bg-[#00754A]"
-              style={{ width: `${progress}%` }}
-            />
-          </div>
-          <div className="mt-2 flex items-center justify-between gap-2">
-            <p className="text-[11px] font-semibold text-gray-500">
-              {eligible
-                ? `Giảm ${money(voucherSavings(voucher))}`
-                : `Mua thêm ${money(missingAmount)}`}
-            </p>
-            <button
-              type="button"
-              onClick={onApply}
-              disabled={!eligible || selected}
-              className="client-pill-primary px-3 py-1.5 text-[11px] font-black disabled:border-gray-200 disabled:bg-gray-200 disabled:text-gray-500"
-            >
-              {selected ? 'Đã chọn' : eligible ? 'Áp dụng' : 'Chưa đủ'}
-            </button>
-          </div>
-          <p className="mt-1 text-[10px] font-semibold text-gray-400">
-            Hạn: {voucherExpiryLabel(voucher.expiresAt)}
-          </p>
-          <p className="mt-1 text-[10px] font-semibold text-gray-400">
-            {voucherExpiryDateTimeLabel(voucher.expiresAt)} · {voucherRemainingUsesLabel(voucher)}
-            {voucher.isSaved ? ' · Đã nhận' : ''}
-          </p>
-        </div>
-      </div>
-    </div>
+    <VoucherSelectorModal
+      open={voucherModalOpen}
+      vouchers={vouchers}
+      loading={loadingVouchers}
+      subtotal={subtotal}
+      selectedCode={appliedDiscountCode}
+      onApply={(code) => void applyVoucher(code)}
+      onClose={() => setVoucherModalOpen(false)}
+    />
+    </>
   );
 }

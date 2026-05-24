@@ -24,6 +24,7 @@ import {
 import { clientApi, type ClientApiError } from '../../lib/client-api';
 import { clearGuestCart, refreshGlobalCart, useCart } from '../../hooks/useCart';
 import { useClientSession } from '../../hooks/useClientSession';
+import { useToast } from '../../hooks/useToast';
 
 type GuestShipping = {
   recipientName: string;
@@ -182,6 +183,7 @@ export default function Payment() {
   const location = useLocation();
   const { session } = useClientSession();
   const { cart, fetchCart } = useCart();
+  const { showToast } = useToast();
   const state = (location.state as LocationState) || {};
 
   const [method, setMethod] = useState<PaymentMethodKey | 'credit'>('cod');
@@ -358,7 +360,7 @@ export default function Payment() {
 
   const handleConfirmSimPayment = async () => {
     if (!PAYMENT_SIMULATION_ENABLED) {
-      alert('Chế độ thanh toán mô phỏng đang bị tắt.');
+      showToast({ tone: 'warning', title: 'Thanh toán mô phỏng đang tắt' });
       return;
     }
 
@@ -385,11 +387,11 @@ export default function Payment() {
         isGuest: simIsGuest,
       });
     } catch (error) {
-      alert(
-        error instanceof Error
-          ? error.message
-          : 'Xac nhan thanh toan that bai. Vui long thu lai.',
-      );
+      showToast({
+        tone: 'error',
+        title: 'Xác nhận thanh toán thất bại',
+        description: error instanceof Error ? error.message : 'Vui lòng thử lại.',
+      });
     } finally {
       setSimConfirming(false);
     }
@@ -397,7 +399,7 @@ export default function Payment() {
 
   const handlePlaceOrder = async () => {
     if (method !== 'credit' && !availableMethods.length) {
-      alert('Hiện tại không có phương thức thanh toán nào khả dụng.');
+      showToast({ tone: 'warning', title: 'Không có phương thức thanh toán khả dụng' });
       return;
     }
 
@@ -408,17 +410,17 @@ export default function Payment() {
 
       if (!isGuest) {
         if (!latestCart?.items.length) {
-          alert('Giỏ hàng trống hoặc đã thay đổi. Vui lòng kiểm tra lại.');
+          showToast({ tone: 'warning', title: 'Giỏ hàng đã thay đổi', description: 'Vui lòng kiểm tra lại giỏ hàng.' });
           void navigate('/client/cart');
           return;
         }
         if (latestCart.validationStatus === 'blocked') {
-          alert('Có sản phẩm hết hàng, ngừng bán hoặc vượt tồn kho. Vui lòng cập nhật giỏ hàng trước khi đặt.');
+          showToast({ tone: 'warning', title: 'Giỏ hàng cần cập nhật', description: 'Có sản phẩm hết hàng, ngừng bán hoặc vượt tồn kho.' });
           void navigate('/client/cart');
           return;
         }
         if (Math.abs(Number(latestCart.totalAmount) - subtotal) > 0.01) {
-          alert('Tổng tiền giỏ hàng đã thay đổi. Vui lòng kiểm tra lại trước khi đặt.');
+          showToast({ tone: 'warning', title: 'Tổng tiền đã thay đổi', description: 'Vui lòng kiểm tra lại trước khi đặt hàng.' });
           void navigate('/client/cart');
           return;
         }
@@ -431,7 +433,7 @@ export default function Payment() {
           !latestCart?.items.length ||
           (isPickup ? !state.pickupContact : !state.guestShipping)
         ) {
-          alert('Giỏ hàng trống hoặc thiếu thông tin nhận hàng.');
+          showToast({ tone: 'warning', title: 'Thiếu thông tin đặt hàng', description: 'Vui lòng kiểm tra giỏ hàng và thông tin nhận hàng.' });
           return;
         }
         order = await clientApi.post<CreateOrderResponse>(
@@ -482,9 +484,11 @@ export default function Payment() {
           }
 
           if (!PAYMENT_SIMULATION_ENABLED) {
-            alert(
-              'Cổng thanh toán trực tuyến chưa được cấu hình. Đơn đã được tạo ở trạng thái chờ thanh toán.',
-            );
+            showToast({
+              tone: 'info',
+              title: 'Đơn đã được tạo',
+              description: 'Cổng thanh toán trực tuyến chưa được cấu hình. Đơn đang chờ thanh toán.',
+            });
             setSuccess({
               orderId: order.id,
               totalPayment: order.totalPayment,
@@ -546,9 +550,11 @@ export default function Payment() {
         }
 
         if (!PAYMENT_SIMULATION_ENABLED) {
-          alert(
-            'Cổng thanh toán trực tuyến chưa được cấu hình. Đơn đã được tạo ở trạng thái chờ thanh toán.',
-          );
+          showToast({
+            tone: 'info',
+            title: 'Đơn đã được tạo',
+            description: 'Cổng thanh toán trực tuyến chưa được cấu hình. Đơn đang chờ thanh toán.',
+          });
           void navigate(`/client/orders/${order.id}`);
           return;
         }
@@ -566,24 +572,24 @@ export default function Payment() {
     } catch (error) {
       if (isCartChangedError(error)) {
         await fetchCart();
-        alert('Giỏ hàng đã thay đổi về giá hoặc tồn kho. Vui lòng kiểm tra lại trước khi đặt hàng.');
+        showToast({ tone: 'warning', title: 'Giỏ hàng đã thay đổi', description: 'Vui lòng kiểm tra lại giá và tồn kho trước khi đặt hàng.' });
         void navigate('/client/cart');
         return;
       }
       if (isFulfillmentChangedError(error)) {
-        alert(
-          error instanceof Error
-            ? error.message
-            : 'Thông tin nhận hàng đã thay đổi. Vui lòng kiểm tra lại trước khi đặt hàng.',
-        );
+        showToast({
+          tone: 'warning',
+          title: 'Thông tin nhận hàng đã thay đổi',
+          description: error instanceof Error ? error.message : 'Vui lòng kiểm tra lại trước khi đặt hàng.',
+        });
         void navigate('/client/checkout');
         return;
       }
-      alert(
-        error instanceof Error
-          ? error.message
-          : 'Đặt hàng thất bại. Vui lòng thử lại.',
-      );
+      showToast({
+        tone: 'error',
+        title: 'Đặt hàng thất bại',
+        description: error instanceof Error ? error.message : 'Vui lòng thử lại.',
+      });
     } finally {
       setPlacing(false);
     }

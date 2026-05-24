@@ -175,9 +175,7 @@ function ProductCard({ product, onAddToCart, adding }: {
           {product.appliedDiscount && hasDiscount && (
             <p className="flex items-center gap-1 text-[10px] font-semibold text-orange-500">
               <Tag size={9} />
-              {product.appliedDiscount.type === 'PERCENTAGE'
-                ? `Giảm ${product.appliedDiscount.value}%`
-                : `Giảm ${formatPrice(product.appliedDiscount.value)}`}
+              {discountValueLabel(product.appliedDiscount, formatPrice)}
             </p>
           )}
           <div className="mt-3 flex gap-2">

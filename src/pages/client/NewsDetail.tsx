@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { clientApi } from '../../lib/client-api';
 import { useClientSession } from '../../hooks/useClientSession';
+import { useToast } from '../../hooks/useToast';
 import CollapsibleHtml from '../../components/shared/CollapsibleHtml';
 
 type NewsDetail = {
@@ -202,12 +203,13 @@ function CommentForm({
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const { showToast } = useToast();
 
   const handleImagePick = async (e: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
     if (!files.length) return;
     if (images.length + files.length > 5) {
-      alert('Tối đa 5 ảnh mỗi bình luận');
+      showToast({ tone: 'warning', title: 'Tối đa 5 ảnh mỗi bình luận' });
       return;
     }
     setUploading(true);
@@ -219,7 +221,7 @@ function CommentForm({
         setImages((prev) => [...prev, res.url]);
       }
     } catch {
-      alert('Upload ảnh thất bại, vui lòng thử lại');
+      showToast({ tone: 'error', title: 'Upload ảnh thất bại', description: 'Vui lòng thử lại.' });
     }
     setUploading(false);
     if (fileRef.current) fileRef.current.value = '';
@@ -239,7 +241,7 @@ function CommentForm({
       setText('');
       setImages([]);
     } catch {
-      alert('Gửi bình luận thất bại');
+      showToast({ tone: 'error', title: 'Gửi bình luận thất bại', description: 'Vui lòng thử lại.' });
     }
     setSubmitting(false);
   };
