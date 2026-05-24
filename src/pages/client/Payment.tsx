@@ -122,6 +122,10 @@ const PAYMENT_METHODS: Array<{
   },
 ];
 
+const PAYMENT_SIMULATION_ENABLED =
+  import.meta.env.DEV ||
+  import.meta.env.VITE_ENABLE_PAYMENT_SIMULATION === 'true';
+
 function formatPrice(price: number) {
   return new Intl.NumberFormat('vi-VN', {
     style: 'currency',
@@ -261,7 +265,7 @@ export default function Payment() {
   }, [availableMethods, isCreditAvailable, method]);
 
   useEffect(() => {
-    if (simulateOpen) {
+    if (simulateOpen && PAYMENT_SIMULATION_ENABLED) {
       setSimCountdown(600);
       countdownRef.current = setInterval(() => {
         setSimCountdown((current) => {
@@ -312,6 +316,11 @@ export default function Payment() {
   );
 
   const handleConfirmSimPayment = async () => {
+    if (!PAYMENT_SIMULATION_ENABLED) {
+      alert('Chế độ thanh toán mô phỏng đang bị tắt.');
+      return;
+    }
+
     if (!simOrderId || !simRef) {
       return;
     }
@@ -429,6 +438,19 @@ export default function Payment() {
             setSimRef(`${order.id}-${Date.now()}`);
           }
 
+          if (!PAYMENT_SIMULATION_ENABLED) {
+            alert(
+              'Cổng thanh toán trực tuyến chưa được cấu hình. Đơn đã được tạo ở trạng thái chờ thanh toán.',
+            );
+            setSuccess({
+              orderId: order.id,
+              totalPayment: order.totalPayment,
+              paymentMethod: method,
+              isGuest: true,
+            });
+            return;
+          }
+
           setSimOrderId(order.id);
           setSimIsGuest(true);
           setSimulateOpen(true);
@@ -478,6 +500,14 @@ export default function Payment() {
           setSimRef(paymentTransaction.transactionRef);
         } catch {
           setSimRef(`${order.id}-${Date.now()}`);
+        }
+
+        if (!PAYMENT_SIMULATION_ENABLED) {
+          alert(
+            'Cổng thanh toán trực tuyến chưa được cấu hình. Đơn đã được tạo ở trạng thái chờ thanh toán.',
+          );
+          void navigate(`/client/orders/${order.id}`);
+          return;
         }
 
         setSimOrderId(order.id);
@@ -646,7 +676,7 @@ export default function Payment() {
 
   return (
     <>
-      {simulateOpen && (
+      {PAYMENT_SIMULATION_ENABLED && simulateOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
           <div className="client-card w-full max-w-sm overflow-hidden">
             <div

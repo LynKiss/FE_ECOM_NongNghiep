@@ -1,16 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 
-function decodeHtmlEntities(raw: string): string {
-  try {
-    const ta = document.createElement('textarea');
-    ta.innerHTML = raw;
-    return ta.value;
-  } catch {
-    return raw;
-  }
-}
-
 type Props = {
   html: string;
   collapsedHeight?: number;
@@ -22,8 +12,6 @@ export default function CollapsibleHtml({ html, collapsedHeight = 340, contentCl
   const [overflows, setOverflows] = useState(false);
   const [fullHeight, setFullHeight] = useState(0);
   const innerRef = useRef<HTMLDivElement>(null);
-
-  const decoded = decodeHtmlEntities(html);
 
   useEffect(() => {
     const el = innerRef.current;
@@ -48,7 +36,7 @@ export default function CollapsibleHtml({ html, collapsedHeight = 340, contentCl
         <div
           ref={innerRef}
           className={contentClassName}
-          dangerouslySetInnerHTML={{ __html: decoded }}
+          dangerouslySetInnerHTML={{ __html: html }}
         />
       </div>
 

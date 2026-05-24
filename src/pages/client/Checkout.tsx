@@ -142,6 +142,16 @@ export default function Checkout() {
     }).catch(() => {}).finally(() => setLoadingAddresses(false));
   }, [session]);
 
+  useEffect(() => {
+    if (!session) {
+      setAppliedDiscountCode('');
+      setAppliedDiscountAmount(0);
+      setVoucherInput('');
+      setVoucherError('');
+      setVouchers([]);
+    }
+  }, [session]);
+
   const subtotal = Number(cart?.totalAmount ?? 0);
   const productIds = useMemo(
     () => cart?.items.map((item) => item.productId) ?? [],
@@ -219,8 +229,9 @@ export default function Checkout() {
   }, [cart?.items.length, subtotal, quoteLocation.province, quoteLocation.district]);
 
   useEffect(() => {
-    if (!cart?.items.length) {
+    if (!session || !cart?.items.length) {
       setVouchers([]);
+      setLoadingVouchers(false);
       return;
     }
 
@@ -241,10 +252,17 @@ export default function Checkout() {
     return () => {
       cancelled = true;
     };
-  }, [cart, subtotal, productIds.join('|'), voucherItems]);
+  }, [session, cart, subtotal, productIds.join('|'), voucherItems]);
 
   const applyVoucher = async (code: string) => {
     if (!cart) return;
+    if (!session) {
+      setAppliedDiscountCode('');
+      setAppliedDiscountAmount(0);
+      setVoucherError('Đăng nhập để dùng mã giảm giá.');
+      return;
+    }
+
     const normalized = code.trim().toUpperCase();
     if (!normalized) return;
 
@@ -320,8 +338,8 @@ export default function Checkout() {
             deliveryName: selectedDelivery.name,
             shippingCost: shipping,
             note,
-            discountCode: appliedDiscountCode || undefined,
-            discountAmount: appliedDiscountAmount,
+            discountCode: undefined,
+            discountAmount: 0,
             subtotal,
             total,
           },
@@ -366,8 +384,8 @@ export default function Checkout() {
           deliveryName: selectedDelivery.name,
           shippingCost: shipping,
           note,
-          discountCode: appliedDiscountCode || undefined,
-          discountAmount: appliedDiscountAmount,
+          discountCode: undefined,
+          discountAmount: 0,
           subtotal,
           total,
         },
@@ -794,6 +812,20 @@ export default function Checkout() {
                 </div>
               ) : null}
 
+              {!session ? (
+                <div className="rounded-2xl border border-[#c7d8cf] bg-[#f4f8f5] px-4 py-3 text-sm text-[#1E3932]">
+                  <p className="font-black">Đăng nhập để dùng mã giảm giá</p>
+                  <p className="mt-1 text-xs text-gray-600">
+                    Voucher chỉ áp dụng cho tài khoản đã đăng nhập để hệ thống kiểm tra lượt dùng và hoàn tiền chính xác.
+                  </p>
+                  <Link
+                    to="/client/login"
+                    className="mt-3 inline-flex rounded-full bg-[#00754A] px-4 py-2 text-xs font-black text-white"
+                  >
+                    Đăng nhập
+                  </Link>
+                </div>
+              ) : (
               <div className="flex gap-2">
                 <input
                   value={voucherInput}
@@ -813,6 +845,7 @@ export default function Checkout() {
                   {validatingVoucher ? '...' : 'Áp dụng'}
                 </button>
               </div>
+              )}
               {voucherError ? (
                 <p className="mt-2 text-xs font-semibold text-red-500">
                   {voucherError}
@@ -820,7 +853,7 @@ export default function Checkout() {
               ) : null}
 
               <div className="mt-4 space-y-2">
-                {loadingVouchers ? (
+                {!session ? null : loadingVouchers ? (
                   <div className="rounded-xl bg-[#edebe9] px-4 py-5 text-center text-xs font-semibold text-gray-500">
                     Đang gợi ý voucher...
                   </div>

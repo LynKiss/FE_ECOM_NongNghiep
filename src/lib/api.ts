@@ -7,6 +7,20 @@ type ApiEnvelope<T> = {
   statusCode: number;
   message: string;
   data: T;
+  error?: string;
+  path?: string;
+};
+
+type ApiPayload<T> = Partial<Omit<ApiEnvelope<T>, 'message'>> & {
+  message?: string | string[];
+  error?: string;
+  path?: string;
+};
+
+export type AdminApiError = Error & {
+  statusCode?: number;
+  error?: string;
+  path?: string;
 };
 
 type LoginResponse = {
@@ -18,12 +32,22 @@ type LoginResponse = {
 };
 
 async function parseEnvelope<T>(response: Response): Promise<ApiEnvelope<T>> {
-  const payload = (await response.json()) as ApiEnvelope<T> | { message?: string };
+  let payload: ApiPayload<T>;
+  try {
+    payload = (await response.json()) as typeof payload;
+  } catch {
+    payload = {};
+  }
 
   if (!response.ok) {
-    const message =
-      'message' in payload && payload.message ? payload.message : `API request failed with ${response.status}`;
-    throw new Error(message);
+    const message = Array.isArray(payload.message)
+      ? payload.message.join(', ')
+      : payload.message || payload.error || `API request failed with ${response.status}`;
+    const error = new Error(message) as AdminApiError;
+    error.statusCode = payload.statusCode ?? response.status;
+    error.error = payload.error;
+    error.path = payload.path;
+    throw error;
   }
 
   return payload as ApiEnvelope<T>;

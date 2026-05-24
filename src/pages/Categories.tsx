@@ -1306,9 +1306,11 @@ function PreviewPanel({
       </div>
       <div className="rounded-xl border border-on-surface/10 bg-white px-5 py-4">
         {html.trim() ? (
-          <div
-            className="prose prose-sm max-w-none text-on-surface"
-            dangerouslySetInnerHTML={{ __html: html }}
+          <iframe
+            title="Xem trước mô tả danh mục"
+            sandbox=""
+            className="h-64 w-full rounded-lg border border-on-surface/10 bg-white"
+            srcDoc={`<!doctype html><html><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;color:#1f2933;line-height:1.6;padding:12px;margin:0}img{max-width:100%;height:auto}table{border-collapse:collapse;width:100%}td,th{border:1px solid #d8ded8;padding:6px}</style></head><body>${html}</body></html>`}
           />
         ) : (
           <p className="text-sm text-on-surface-variant">{emptyLabel}</p>

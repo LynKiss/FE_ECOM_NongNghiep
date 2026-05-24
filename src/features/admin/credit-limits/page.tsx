@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { CreditCard, Plus, RefreshCw, X, Trash2, AlertCircle, DollarSign, TrendingUp, Users, Search } from 'lucide-react';
 import { apiClient } from '../../../lib/api';
+import { hasAdminPermission } from '../../../lib/admin-session';
 
 interface CreditLimitItem {
   limitId: string;
@@ -43,6 +44,7 @@ export default function CreditLimitsPage() {
   const [paymentSaving, setPaymentSaving] = useState(false);
 
   const [syncingId, setSyncingId] = useState<string | null>(null);
+  const canManagePayments = hasAdminPermission('manage_payments');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -102,6 +104,7 @@ export default function CreditLimitsPage() {
 
   // Thanh toán modal
   const openPaymentModal = (item: CreditLimitItem) => {
+    if (!canManagePayments) return;
     setPaymentForm({ userId: item.userId, userName: item.fullName ?? item.username ?? item.email ?? '', amount: '', notes: '' });
     setShowPaymentModal(true);
   };
@@ -274,6 +277,7 @@ export default function CreditLimitsPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-center gap-1">
+                        {canManagePayments && (
                         <button
                           onClick={() => openPaymentModal(item)}
                           title="Ghi nhận thanh toán"
@@ -281,6 +285,7 @@ export default function CreditLimitsPage() {
                         >
                           Thu tiền
                         </button>
+                        )}
                         <button
                           onClick={() => openEditModal(item)}
                           title="Chỉnh hạn mức"
