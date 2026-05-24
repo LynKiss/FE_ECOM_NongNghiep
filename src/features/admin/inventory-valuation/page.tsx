@@ -60,20 +60,57 @@ interface ValuationResponse {
   items: ValuationItem[];
 }
 
+interface ReconciliationItem {
+  productId: string;
+  productName: string;
+  quantityAvailable: number;
+  quantityReserved: number;
+  batchRemainingQty: number;
+  defaultWarehouseQty: number;
+  deltaBatch: number;
+  deltaWarehouse: number;
+  severity: 'OK' | 'WARNING' | 'CRITICAL';
+  warnings: string[];
+}
+
+interface ReconciliationResponse {
+  summary: {
+    totalProducts: number;
+    totalMismatches: number;
+    missingBatch: number;
+    warehouseMismatches: number;
+    critical: number;
+    warning: number;
+    ok: number;
+  };
+  items: ReconciliationItem[];
+  meta: { asOf: string; policy: string };
+}
+
 export default function InventoryValuationPage() {
   const [data, setData] = useState<ValuationResponse | null>(null);
+  const [reconciliation, setReconciliation] = useState<ReconciliationResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
+  const [onlyMismatch, setOnlyMismatch] = useState(true);
+  const [loadError, setLoadError] = useState('');
 
   const load = async () => {
     setLoading(true);
     try {
-      const res = await apiClient.get<ValuationResponse>(
-        '/reports/inventory-valuation',
-      );
+      const [res, recon] = await Promise.all([
+        apiClient.get<ValuationResponse>('/reports/inventory-valuation'),
+        apiClient.get<ReconciliationResponse>(
+          `/reports/inventory-reconciliation?onlyMismatch=${onlyMismatch ? 'true' : 'false'}&limit=200`,
+        ),
+      ]);
       setData(res);
-    } catch {
+      setReconciliation(recon);
+      setLoadError('');
+    } catch (error) {
       setData(null);
+      setReconciliation(null);
+      setLoadError(error instanceof Error ? error.message : 'Không thể tải báo cáo tồn kho');
     } finally {
       setLoading(false);
     }
@@ -81,7 +118,7 @@ export default function InventoryValuationPage() {
 
   useEffect(() => {
     void load();
-  }, []);
+  }, [onlyMismatch]);
 
   const fmt = (n: number) =>
     n.toLocaleString('vi-VN', {
@@ -135,6 +172,12 @@ export default function InventoryValuationPage() {
           </span>{' '}
           • Phương pháp: <span className="font-semibold">Bình quân gia quyền (Moving Average Cost)</span>
         </p>
+      )}
+
+      {loadError && (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
+          {loadError}
+        </div>
       )}
 
       {data && (
@@ -197,6 +240,102 @@ export default function InventoryValuationPage() {
           />
         </div>
       </div>
+
+      {reconciliation && (
+        <div className="rounded-xl border border-outline-variant bg-surface p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-base font-bold text-on-surface">Đối soát tồn kho</h2>
+              <p className="mt-1 text-xs text-on-surface-variant">
+                So sánh tồn sản phẩm, tồn batch FIFO/FEFO và tồn kho mặc định.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setOnlyMismatch((value) => !value)}
+                className="rounded-lg border border-primary/30 px-3 py-1.5 text-xs font-bold text-primary hover:bg-primary/5"
+              >
+                {onlyMismatch ? 'Đang xem lệch' : 'Đang xem tất cả'}
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  downloadFromUrl(
+                    `/reports/inventory-reconciliation/export?onlyMismatch=${onlyMismatch ? 'true' : 'false'}`,
+                    `inventory-reconciliation-${new Date().toISOString().slice(0, 10)}.csv`,
+                  )
+                }
+                className="flex items-center gap-1.5 rounded-lg border border-primary/40 bg-white px-3 py-1.5 text-xs font-bold text-primary hover:bg-primary/5"
+              >
+                <Download className="h-3.5 w-3.5" /> Xuất đối soát
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
+            {[
+              ['Tổng SP', reconciliation.summary.totalProducts],
+              ['Lệch', reconciliation.summary.totalMismatches],
+              ['Thiếu batch', reconciliation.summary.missingBatch],
+              ['Lệch kho', reconciliation.summary.warehouseMismatches],
+              ['Critical', reconciliation.summary.critical],
+            ].map(([label, value]) => (
+              <div key={String(label)} className="rounded-lg border border-outline-variant bg-surface-variant/40 p-3">
+                <p className="text-[11px] font-semibold text-on-surface-variant">{label}</p>
+                <p className="mt-1 text-lg font-black text-on-surface">{Number(value).toLocaleString('vi-VN')}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-surface-variant text-on-surface-variant">
+                <tr>
+                  <th className="px-3 py-2 text-left font-medium">Sản phẩm</th>
+                  <th className="px-3 py-2 text-right font-medium">Available</th>
+                  <th className="px-3 py-2 text-right font-medium">Batch</th>
+                  <th className="px-3 py-2 text-right font-medium">Kho mặc định</th>
+                  <th className="px-3 py-2 text-right font-medium">Lệch batch</th>
+                  <th className="px-3 py-2 text-right font-medium">Lệch kho</th>
+                  <th className="px-3 py-2 text-right font-medium">Trạng thái</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-outline-variant">
+                {reconciliation.items.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-6 text-center text-on-surface-variant">
+                      Không có lệch tồn kho trong bộ lọc hiện tại.
+                    </td>
+                  </tr>
+                ) : (
+                  reconciliation.items.slice(0, 25).map((item) => (
+                    <tr key={item.productId}>
+                      <td className="max-w-[240px] truncate px-3 py-2 font-semibold">{item.productName}</td>
+                      <td className="px-3 py-2 text-right">{item.quantityAvailable.toLocaleString('vi-VN')}</td>
+                      <td className="px-3 py-2 text-right">{item.batchRemainingQty.toLocaleString('vi-VN')}</td>
+                      <td className="px-3 py-2 text-right">{item.defaultWarehouseQty.toLocaleString('vi-VN')}</td>
+                      <td className="px-3 py-2 text-right">{item.deltaBatch.toLocaleString('vi-VN')}</td>
+                      <td className="px-3 py-2 text-right">{item.deltaWarehouse.toLocaleString('vi-VN')}</td>
+                      <td className="px-3 py-2 text-right">
+                        <span className={`rounded-full px-2 py-1 text-[11px] font-black ${
+                          item.severity === 'OK'
+                            ? 'bg-emerald-50 text-emerald-700'
+                            : item.severity === 'WARNING'
+                              ? 'bg-amber-50 text-amber-700'
+                              : 'bg-red-50 text-red-700'
+                        }`}>
+                          {item.severity}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       <div className="rounded-xl border border-outline-variant bg-surface overflow-hidden">
         <div className="overflow-x-auto">

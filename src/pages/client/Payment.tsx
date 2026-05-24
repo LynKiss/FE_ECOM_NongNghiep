@@ -49,11 +49,21 @@ type LocationState = {
   shippingAddress?: string;
   deliveryName?: string;
   shippingCost?: number;
+  quoteProvince?: string;
+  quoteDistrict?: string;
   note?: string;
   discountCode?: string;
   discountAmount?: number;
   subtotal?: number;
   total?: number;
+};
+
+type DeliveryMethodQuote = {
+  id: string;
+  type: 'delivery' | 'pickup';
+  eligible: boolean;
+  shippingFee: number;
+  ineligibleReason?: string | null;
 };
 
 type CreateOrderResponse = {
@@ -150,6 +160,7 @@ function isFulfillmentChangedError(error: unknown) {
     'DELIVERY_MIN_ORDER_NOT_MET',
     'PICKUP_CONTACT_REQUIRED',
     'SHIPPING_ADDRESS_REQUIRED',
+    'DELIVERY_CHANGED',
   ].includes(apiError?.error ?? '');
 }
 
@@ -315,6 +326,36 @@ export default function Payment() {
     cart?.items.some((item) => item.priceChanged),
   );
 
+  const refreshFulfillmentQuote = async (nextSubtotal: number) => {
+    const province = state.quoteProvince ?? state.guestShipping?.province;
+    const district = state.quoteDistrict ?? state.guestShipping?.district;
+    const methods = await clientApi.post<DeliveryMethodQuote[]>('/delivery-methods/quote', {
+      subtotal: nextSubtotal,
+      province: province || undefined,
+      district: district || undefined,
+    });
+    const selected = methods.find((item) => item.id === state.deliveryId);
+    if (!selected?.eligible) {
+      throw Object.assign(
+        new Error('Phương thức nhận hàng đã thay đổi. Vui lòng chọn lại.'),
+        { error: 'DELIVERY_CHANGED', reason: selected?.ineligibleReason },
+      );
+    }
+    if (Math.abs(Number(selected.shippingFee ?? 0) - shipping) > 0.01) {
+      throw Object.assign(
+        new Error('Phí nhận hàng đã thay đổi. Vui lòng kiểm tra lại.'),
+        { error: 'DELIVERY_CHANGED' },
+      );
+    }
+    if (selected.type !== (isPickup ? 'pickup' : 'delivery')) {
+      throw Object.assign(
+        new Error('Loại phương thức nhận hàng đã thay đổi. Vui lòng chọn lại.'),
+        { error: 'DELIVERY_CHANGED' },
+      );
+    }
+    return selected;
+  };
+
   const handleConfirmSimPayment = async () => {
     if (!PAYMENT_SIMULATION_ENABLED) {
       alert('Chế độ thanh toán mô phỏng đang bị tắt.');
@@ -355,7 +396,7 @@ export default function Payment() {
   };
 
   const handlePlaceOrder = async () => {
-    if (!availableMethods.length) {
+    if (method !== 'credit' && !availableMethods.length) {
       alert('Hiện tại không có phương thức thanh toán nào khả dụng.');
       return;
     }
@@ -363,7 +404,7 @@ export default function Payment() {
     setPlacing(true);
     try {
       let order: CreateOrderResponse;
-      const latestCart = isGuest ? cart : await fetchCart();
+      const latestCart = await fetchCart();
 
       if (!isGuest) {
         if (!latestCart?.items.length) {
@@ -383,9 +424,11 @@ export default function Payment() {
         }
       }
 
+      await refreshFulfillmentQuote(Number(latestCart?.totalAmount ?? subtotal));
+
       if (isGuest) {
         if (
-          !cart?.items.length ||
+          !latestCart?.items.length ||
           (isPickup ? !state.pickupContact : !state.guestShipping)
         ) {
           alert('Giỏ hàng trống hoặc thiếu thông tin nhận hàng.');
@@ -401,7 +444,7 @@ export default function Payment() {
             paymentMethod: method,
             note: state.note || undefined,
             discountCode: undefined,
-            items: cart.items.map((item) => ({
+            items: latestCart.items.map((item) => ({
               productId: item.productId,
               quantity: item.quantity,
             })),

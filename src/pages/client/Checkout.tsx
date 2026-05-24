@@ -93,6 +93,7 @@ export default function Checkout() {
   const [selectedDeliveryId, setSelectedDeliveryId] = useState<string | null>(null);
   const [loadingDeliveryQuotes, setLoadingDeliveryQuotes] = useState(false);
   const [deliveryQuoteError, setDeliveryQuoteError] = useState('');
+  const [continuing, setContinuing] = useState(false);
   const [addingAddress, setAddingAddress] = useState(false);
   const [note, setNote] = useState('');
   const [loadingAddresses, setLoadingAddresses] = useState(true);
@@ -323,9 +324,66 @@ export default function Checkout() {
     }
   };
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
     if (hasBlockedItems) return;
     if (!selectedDeliveryId || !selectedDelivery?.eligible) return;
+
+    setContinuing(true);
+    let nextSubtotal = subtotal;
+    let nextShipping = shipping;
+    let nextTotal = total;
+    let nextSelectedDelivery = selectedDelivery;
+    try {
+      const latestCart = await fetchCart();
+      if (!latestCart?.items.length) {
+        alert('Giỏ hàng trống hoặc đã thay đổi. Vui lòng kiểm tra lại.');
+        void navigate('/client/cart');
+        return;
+      }
+      if (latestCart.validationStatus === 'blocked') {
+        alert('Có sản phẩm hết hàng, ngừng bán hoặc vượt tồn kho. Vui lòng cập nhật giỏ hàng trước khi thanh toán.');
+        void navigate('/client/cart');
+        return;
+      }
+
+      nextSubtotal = Number(latestCart.totalAmount ?? 0);
+      if (Math.abs(nextSubtotal - subtotal) > 0.01) {
+        alert('Giá hoặc số lượng trong giỏ hàng đã thay đổi. Vui lòng xác nhận lại trước khi thanh toán.');
+        void navigate('/client/cart');
+        return;
+      }
+
+      const latestMethods = await clientApi.post<DeliveryMethod[]>('/delivery-methods/quote', {
+        subtotal: nextSubtotal,
+        province: quoteLocation.province || undefined,
+        district: quoteLocation.district || undefined,
+      });
+      const latestSelected = latestMethods.find((method) => method.id === selectedDeliveryId);
+      if (!latestSelected?.eligible) {
+        alert('Phương thức nhận hàng đã thay đổi hoặc không còn phù hợp. Vui lòng chọn lại.');
+        setDeliveryMethods(latestMethods);
+        setSelectedDeliveryId(
+          latestMethods.find((method) => method.isDefault && method.eligible)?.id ??
+            latestMethods.find((method) => method.eligible)?.id ??
+            null,
+        );
+        return;
+      }
+      if (Math.abs(Number(latestSelected.shippingFee ?? 0) - shipping) > 0.01) {
+        alert('Phí nhận hàng đã thay đổi. Vui lòng kiểm tra lại trước khi thanh toán.');
+        setDeliveryMethods(latestMethods);
+        return;
+      }
+      nextSelectedDelivery = latestSelected;
+      nextShipping = Number(latestSelected.shippingFee ?? 0);
+      nextTotal = Math.max(0, nextSubtotal - appliedDiscountAmount) + nextShipping;
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Không thể kiểm tra lại giỏ hàng và phương thức nhận hàng.');
+      return;
+    } finally {
+      setContinuing(false);
+    }
+
     if (!session) {
       if (isPickup) {
         if (!pickupContact.recipientName || !pickupContact.phone) return;
@@ -334,14 +392,16 @@ export default function Checkout() {
             fulfillmentType: 'pickup',
             pickupContact,
             deliveryId: selectedDeliveryId,
+            quoteProvince: quoteLocation.province || undefined,
+            quoteDistrict: quoteLocation.district || undefined,
             shippingAddress: `${pickupContact.recipientName}, ${pickupContact.phone}`,
-            deliveryName: selectedDelivery.name,
-            shippingCost: shipping,
+            deliveryName: nextSelectedDelivery.name,
+            shippingCost: nextShipping,
             note,
             discountCode: undefined,
             discountAmount: 0,
-            subtotal,
-            total,
+            subtotal: nextSubtotal,
+            total: nextTotal,
           },
         });
         return;
@@ -361,14 +421,16 @@ export default function Checkout() {
             province: guestForm.province,
           },
           deliveryId: selectedDeliveryId,
+          quoteProvince: guestForm.province || undefined,
+          quoteDistrict: guestForm.district || undefined,
           shippingAddress: addrText,
-          deliveryName: selectedDelivery?.name ?? '',
-          shippingCost: shipping,
+          deliveryName: nextSelectedDelivery?.name ?? '',
+          shippingCost: nextShipping,
           note,
-          discountCode: appliedDiscountCode || undefined,
-          discountAmount: appliedDiscountAmount,
-          subtotal,
-          total,
+          discountCode: undefined,
+          discountAmount: 0,
+          subtotal: nextSubtotal,
+          total: nextTotal,
         },
       });
       return;
@@ -380,14 +442,16 @@ export default function Checkout() {
           fulfillmentType: 'pickup',
           pickupContact,
           deliveryId: selectedDeliveryId,
+          quoteProvince: quoteLocation.province || undefined,
+          quoteDistrict: quoteLocation.district || undefined,
           shippingAddress: `${pickupContact.recipientName}, ${pickupContact.phone}`,
-          deliveryName: selectedDelivery.name,
-          shippingCost: shipping,
+          deliveryName: nextSelectedDelivery.name,
+          shippingCost: nextShipping,
           note,
           discountCode: undefined,
           discountAmount: 0,
-          subtotal,
-          total,
+          subtotal: nextSubtotal,
+          total: nextTotal,
         },
       });
       return;
@@ -404,14 +468,16 @@ export default function Checkout() {
         fulfillmentType: 'delivery',
         shippingAddressId: selectedAddressId,
         deliveryId: selectedDeliveryId,
+        quoteProvince: addr?.province || undefined,
+        quoteDistrict: addr?.district || undefined,
         shippingAddress: addrText,
-        deliveryName: selectedDelivery?.name ?? '',
-        shippingCost: shipping,
+        deliveryName: nextSelectedDelivery?.name ?? '',
+        shippingCost: nextShipping,
         note,
         discountCode: appliedDiscountCode || undefined,
         discountAmount: appliedDiscountAmount,
-        subtotal,
-        total,
+        subtotal: nextSubtotal,
+        total: nextTotal,
       },
     });
   };
@@ -762,6 +828,7 @@ export default function Checkout() {
                 onClick={handleContinue}
                 disabled={
                 hasBlockedItems ||
+                continuing ||
                 !selectedDeliveryId ||
                 !selectedDelivery?.eligible ||
                 loadingDeliveryQuotes ||

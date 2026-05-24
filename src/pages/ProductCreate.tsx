@@ -161,7 +161,6 @@ export default function ProductCreate() {
         originId: formState.originId || undefined,
         productPrice: formState.productPrice.trim(),
         productPriceSale: formState.productPriceSale.trim() || undefined,
-        quantityAvailable: Number(formState.quantityAvailable || 0),
         unit: formState.unit.trim() || undefined,
         description: formState.description.trim() || undefined,
         isShow: formState.isShow,
@@ -274,7 +273,10 @@ export default function ProductCreate() {
                 <FieldInput label={isVietnamese ? 'Giá khuyến mãi' : 'Sale price'}
                   value={formState.productPriceSale} onChange={set('productPriceSale') as (v: string) => void} type="number" />
                 <FieldInput label={isVietnamese ? 'Số lượng ban đầu' : 'Initial quantity'}
-                  value={formState.quantityAvailable} onChange={set('quantityAvailable') as (v: string) => void} type="number" />
+                  value={formState.quantityAvailable} onChange={set('quantityAvailable') as (v: string) => void} type="number" disabled
+                  help={isVietnamese
+                    ? 'Tạo sản phẩm với tồn 0, sau đó nhập kho để sinh batch và sổ kho.'
+                    : 'Create with stock 0, then import inventory to generate batches and ledger.'} />
               </div>
 
               {/* Barcode row */}
@@ -448,15 +450,16 @@ function flattenCategories(nodes: CategoryNode[], level = 0): Array<{ value: str
 }
 
 function FieldInput({
-  label, value, onChange, type = 'text',
+  label, value, onChange, type = 'text', disabled = false, help,
 }: {
-  label: string; value: string; onChange: (value: string) => void; type?: string;
+  label: string; value: string; onChange: (value: string) => void; type?: string; disabled?: boolean; help?: string;
 }) {
   return (
     <label className="grid gap-2">
       <span className="text-[10px] font-black uppercase tracking-[0.24em] text-on-surface-variant/50">{label}</span>
-      <input type={type} value={value} onChange={(e) => onChange(e.target.value)}
-        className="rounded-2xl border border-on-surface/10 bg-surface px-4 py-3 text-sm outline-none focus:border-primary/40" />
+      <input type={type} value={value} onChange={(e) => onChange(e.target.value)} disabled={disabled}
+        className="rounded-2xl border border-on-surface/10 bg-surface px-4 py-3 text-sm outline-none focus:border-primary/40 disabled:opacity-60" />
+      {help ? <span className="text-xs leading-relaxed text-on-surface-variant">{help}</span> : null}
     </label>
   );
 }

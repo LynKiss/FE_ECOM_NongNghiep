@@ -452,7 +452,6 @@ export default function Products() {
         productPriceSale: formState.productPriceSale.trim() && Number(formState.productPriceSale) > 0
           ? formState.productPriceSale.trim()
           : null,
-        quantityAvailable: Number(formState.quantityAvailable || '0'),
         quantityPerBox: formState.quantityPerBox.trim() ? Number(formState.quantityPerBox) : undefined,
         unit: formState.unit.trim() || undefined,
         barcode: formState.barcode.trim() || undefined,
@@ -878,7 +877,12 @@ export default function Products() {
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label={isVi ? 'Số lượng' : 'Quantity'} error={formErrors.quantityAvailable}>
-                <input value={formState.quantityAvailable} onChange={(e) => setFormState((p) => ({ ...p, quantityAvailable: e.target.value }))} className="input-base" />
+                <input value={formState.quantityAvailable} disabled className="input-base opacity-70" />
+                <p className="mt-1 text-xs text-on-surface-variant">
+                  {isVi
+                    ? 'Tồn kho được ghi nhận qua Nhập kho/Điều chỉnh kho để sinh batch và sổ kho.'
+                    : 'Stock is managed through inventory import/adjustment to keep batches and ledger correct.'}
+                </p>
               </Field>
               <Field label={isVi ? 'Số lượng / thùng' : 'Quantity / box'}>
                 <input value={formState.quantityPerBox} onChange={(e) => setFormState((p) => ({ ...p, quantityPerBox: e.target.value }))} className="input-base" />

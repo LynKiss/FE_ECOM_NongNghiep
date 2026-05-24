@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { TrendingUp, ChevronLeft, ChevronRight, RefreshCw, Download } from 'lucide-react';
+import { AlertTriangle, TrendingUp, ChevronLeft, ChevronRight, RefreshCw, Download } from 'lucide-react';
 import { apiClient } from '../../../lib/api';
 
 const API_BASE_URL =
@@ -34,6 +34,7 @@ interface ProductProfit {
   soldQty: number;
   revenue: number;
   cogs: number;
+  cogsSource?: 'transaction' | 'fallback_avg_cost' | 'mixed';
   grossProfit: number;
   marginPct: number;
 }
@@ -44,10 +45,20 @@ interface PeriodProfit {
   soldQty: number;
 }
 
+interface ProfitabilityMeta {
+  total?: number;
+  revenuePolicy?: string;
+  refundPolicy?: string;
+  cogsPolicy?: string;
+  unallocatedRefund?: number;
+}
+
 export default function ProfitabilityPage() {
   const [groupBy, setGroupBy] = useState<'product' | 'day' | 'month'>('product');
   const [productRows, setProductRows] = useState<ProductProfit[]>([]);
   const [periodRows, setPeriodRows] = useState<PeriodProfit[]>([]);
+  const [reportMeta, setReportMeta] = useState<ProfitabilityMeta | null>(null);
+  const [loadError, setLoadError] = useState('');
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
@@ -64,9 +75,11 @@ export default function ProfitabilityPage() {
       if (filterTo) params.set('to', filterTo + 'T23:59:59');
       const data = await apiClient.get<{
         items?: ProductProfit[];
-        meta?: { total: number };
+        meta?: ProfitabilityMeta;
       }>(`/reports/profitability?${params.toString()}`);
 
+      setReportMeta(data.meta ?? null);
+      setLoadError('');
       if (groupBy === 'product') {
         setProductRows(data.items ?? []);
         setTotal(data.meta?.total ?? 0);
@@ -74,9 +87,11 @@ export default function ProfitabilityPage() {
         setPeriodRows((data as any).items ?? []);
         setTotal(0);
       }
-    } catch {
+    } catch (error) {
       setProductRows([]);
       setPeriodRows([]);
+      setReportMeta(null);
+      setLoadError(error instanceof Error ? error.message : 'Không thể tải báo cáo lợi nhuận');
     } finally {
       setLoading(false);
     }
@@ -159,6 +174,30 @@ export default function ProfitabilityPage() {
         </div>
       )}
 
+      <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-4 text-sm text-emerald-900">
+        <p className="font-bold">Chính sách báo cáo</p>
+        <p className="mt-1">
+          Doanh thu chỉ tính phần đơn đã hoàn tất giao/nhận và chỉ trừ refund đã hoàn thành.
+        </p>
+        <p className="mt-1">
+          Giá vốn ưu tiên transaction xuất/nhập trả theo đơn; dữ liệu cũ thiếu giá vốn sẽ dùng giá vốn bình quân.
+        </p>
+        {Number(reportMeta?.unallocatedRefund ?? 0) > 0 && (
+          <div className="mt-3 flex gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-800">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>
+              Có refund đã hoàn thành chưa gắn được vào dòng trả hàng/sản phẩm:{' '}
+              <b>{fmt(Number(reportMeta?.unallocatedRefund ?? 0))}</b>.
+            </span>
+          </div>
+        )}
+        {loadError && (
+          <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-red-700">
+            {loadError}
+          </div>
+        )}
+      </div>
+
       {/* Table */}
       <div className="rounded-xl border border-outline-variant bg-surface overflow-hidden">
         <div className="overflow-x-auto">
@@ -169,6 +208,7 @@ export default function ProfitabilityPage() {
                   <th className="px-4 py-3 text-left font-medium">Sản phẩm</th>
                   <th className="px-4 py-3 text-right font-medium">SL bán</th>
                   <th className="px-4 py-3 text-right font-medium">Doanh thu</th>
+                  <th className="px-4 py-3 text-right font-medium">Nguồn vốn</th>
                   <th className="px-4 py-3 text-right font-medium">Giá vốn</th>
                   <th className="px-4 py-3 text-right font-medium">Lãi gộp</th>
                   <th className="px-4 py-3 text-right font-medium">Tỷ suất</th>
@@ -192,6 +232,15 @@ export default function ProfitabilityPage() {
                     <td className="px-4 py-2.5 font-medium max-w-[220px] truncate">{r.productName}</td>
                     <td className="px-4 py-2.5 text-right">{r.soldQty.toLocaleString('vi-VN')}</td>
                     <td className="px-4 py-2.5 text-right">{fmt(r.revenue)}</td>
+                    <td className="px-4 py-2.5 text-right">
+                      <span className="rounded-full bg-surface-variant px-2 py-1 text-[11px] font-semibold text-on-surface-variant">
+                        {r.cogsSource === 'transaction'
+                          ? 'Sổ kho'
+                          : r.cogsSource === 'mixed'
+                            ? 'Hỗn hợp'
+                            : 'Giá TB'}
+                      </span>
+                    </td>
                     <td className="px-4 py-2.5 text-right text-red-500">{fmt(r.cogs)}</td>
                     <td className={`px-4 py-2.5 text-right font-semibold ${r.grossProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                       {fmt(r.grossProfit)}

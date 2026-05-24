@@ -23,6 +23,7 @@ import { clientApi } from '../../lib/client-api';
 import { useCart } from '../../hooks/useCart';
 import { useClientSession } from '../../hooks/useClientSession';
 import { triggerCartFlyAnimation } from '../../hooks/useCartAnimation';
+import { discountValueLabel } from '../../lib/discount-display';
 
 type Product = {
   productId: string;
