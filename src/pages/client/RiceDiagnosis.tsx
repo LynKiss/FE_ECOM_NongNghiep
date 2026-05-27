@@ -342,7 +342,7 @@ export default function RiceDiagnosis() {
           <div className="client-feature-band overflow-hidden p-8">
             <p className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-1.5 text-xs font-black uppercase tracking-[0.24em] text-white/80">
               <Leaf size={14} />
-              Rice AI
+              AI lúa
             </p>
 
             <h1 className="mt-5 max-w-2xl text-4xl font-black leading-tight sm:text-5xl">
@@ -399,7 +399,7 @@ export default function RiceDiagnosis() {
               {previewUrl ? (
                 <img
                   src={previewUrl}
-                  alt="Rice preview"
+                  alt="Ảnh lá lúa xem trước"
                   className="h-56 w-full rounded-xl object-cover"
                 />
               ) : (
@@ -482,7 +482,7 @@ export default function RiceDiagnosis() {
                   {getRecommendationLabel(result.recommendationLevel)}
                 </span>
                 <span className="rounded-full border border-black/10 bg-slate-50 px-3 py-2 text-xs font-black text-slate-700">
-                  Confidence {formatConfidence(result.confidence)}
+                  Độ tin cậy {formatConfidence(result.confidence)}
                 </span>
                 {result.inferenceFlags.lowQuality ? (
                   <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-black text-amber-800">
@@ -655,7 +655,7 @@ export default function RiceDiagnosis() {
                       Top dự đoán
                     </p>
                     <span className="text-xs font-semibold text-gray-400">
-                      {result.model.version ?? 'Model'}
+                      {result.model.version ?? 'Mô hình'}
                     </span>
                   </div>
                   <div className="mt-4 space-y-3">
@@ -688,7 +688,7 @@ export default function RiceDiagnosis() {
                       </p>
                       <p className="mt-2 text-sm leading-6 text-gray-500">
                         {needsManualReview
-                          ? 'Nên dùng khi ảnh khó, lá bị che khuất, confidence yếu hoặc AI đang phân vân giữa nhiều nhãn bệnh.'
+                          ? 'Nên dùng khi ảnh khó, lá bị che khuất, độ tin cậy yếu hoặc AI đang phân vân giữa nhiều nhãn bệnh.'
                           : 'Vẫn có thể mở chat để được tư vấn cách xử lý, phòng ngừa và chọn sản phẩm phù hợp.'}
                       </p>
                     </div>

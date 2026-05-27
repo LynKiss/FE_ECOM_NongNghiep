@@ -34,6 +34,12 @@ type OrderItem = {
   productName: string;
   primaryImageUrl: string | null;
   quantity: number;
+  quantityDelivered?: number;
+  returnableQuantity?: number;
+  returnedQuantity?: number;
+  returnDeadline?: string | null;
+  canCreateReturn?: boolean;
+  returnBlockedReason?: string | null;
   unitPrice: number;
   lineTotal: number;
 };
@@ -43,6 +49,11 @@ type OrderDetailResponse = {
   status: string;
   paymentMethod: string;
   paymentStatus: string;
+  paymentDeadline?: string | null;
+  paymentTimeRemainingSeconds?: number | null;
+  canRetryPayment?: boolean;
+  canCancelUnpaid?: boolean;
+  paymentBlockedReason?: string | null;
   totalPayment: string;
   totalQuantity: number;
   subtotalAmount: string;
@@ -58,6 +69,10 @@ type OrderDetailResponse = {
   address: string;
   note: string | null;
   createdAt: string;
+  returnWindowDays?: number;
+  returnDeadline?: string | null;
+  canCreateReturn?: boolean;
+  returnBlockedReason?: string | null;
   items: OrderItem[];
 };
 
@@ -135,6 +150,20 @@ function getMapEmbedUrl(latitude: number, longitude: number) {
   },${latitude - 0.03},${longitude + 0.03},${latitude + 0.03}&layer=mapnik&marker=${latitude},${longitude}`;
 }
 
+function getReturnBlockedMessage(reason?: string | null) {
+  if (reason === 'RETURN_WINDOW_EXPIRED') return 'Đã quá hạn 7 ngày kể từ khi nhận hàng.';
+  if (reason === 'RETURN_NOT_DELIVERED_YET') return 'Chỉ tạo trả hàng sau khi đơn đã được giao.';
+  return 'Hiện chưa thể tạo yêu cầu trả hàng cho đơn này.';
+}
+
+function formatCountdown(seconds?: number | null) {
+  const safeSeconds = Math.max(0, Number(seconds ?? 0));
+  const minutes = Math.floor(safeSeconds / 60);
+  const remainingSeconds = safeSeconds % 60;
+  if (minutes <= 0) return `${remainingSeconds} giây`;
+  return `${minutes} phút ${remainingSeconds.toString().padStart(2, '0')} giây`;
+}
+
 export default function OrderDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -147,8 +176,10 @@ export default function OrderDetail() {
   const [trackingLoading, setTrackingLoading] = useState(false);
   const [confirmingReceived, setConfirmingReceived] = useState(false);
   const [reordering, setReordering] = useState(false);
+  const [retryingPayment, setRetryingPayment] = useState(false);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const momoVerifiedRef = useRef(false);
+  const vnpayVerifiedRef = useRef(false);
 
   // Return / Short-delivery modals
   type ReturnReason = 'damaged' | 'wrong_item' | 'quality' | 'other';
@@ -275,9 +306,29 @@ export default function OrderDetail() {
         orderInfo: searchParams.get('orderInfo') ?? '',
         orderType: searchParams.get('orderType') ?? '',
         payType: searchParams.get('payType') ?? '',
+        responseTime: searchParams.get('responseTime') ?? '',
         extraData: searchParams.get('extraData') ?? '',
         signature: searchParams.get('signature') ?? '',
       })
+      .then(() => {
+        if (id) {
+          void refreshOrder(id, true);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        setSearchParams({}, { replace: true });
+      });
+  }, [id, searchParams, setSearchParams]);
+
+  useEffect(() => {
+    const vnpTxnRef = searchParams.get('vnp_TxnRef');
+    const vnpSecureHash = searchParams.get('vnp_SecureHash');
+    if (!vnpTxnRef || !vnpSecureHash || vnpayVerifiedRef.current) return;
+    vnpayVerifiedRef.current = true;
+
+    void clientApi
+      .get(`/payments/vnpay/return?${searchParams.toString()}`)
       .then(() => {
         if (id) {
           void refreshOrder(id, true);
@@ -353,7 +404,20 @@ export default function OrderDetail() {
 
   const openReturnModal = () => {
     if (!order?.items?.length) return;
-    setReturnItemId(order.items[0].id);
+    if (!order.canCreateReturn) {
+      showToast({
+        tone: 'warning',
+        title: 'Chưa thể tạo yêu cầu trả hàng',
+        description: getReturnBlockedMessage(order.returnBlockedReason),
+      });
+      return;
+    }
+    const target = order.items.find((item) => Number(item.returnableQuantity ?? item.quantity) > 0);
+    if (!target) {
+      showToast({ tone: 'warning', title: 'Không còn sản phẩm có thể trả' });
+      return;
+    }
+    setReturnItemId(target.id);
     setReturnQuantity('1');
     setReturnReason('damaged');
     setReturnDescription('');
@@ -368,7 +432,7 @@ export default function OrderDetail() {
       !selectedReturnItem ||
       !Number.isInteger(quantity) ||
       quantity <= 0 ||
-      quantity > selectedReturnItem.quantity
+      quantity > Number(selectedReturnItem.returnableQuantity ?? selectedReturnItem.quantity)
     ) {
       showToast({
         tone: 'error',
@@ -468,7 +532,53 @@ export default function OrderDetail() {
     label: order.paymentStatus,
     color: '#374151',
   };
+
+  const handleRetryPayment = async () => {
+    if (!order) return;
+    setRetryingPayment(true);
+    try {
+      const returnUrl = `${window.location.origin}/client/orders/${order.id}`;
+      const paymentTransaction = await clientApi.post<{
+        transactionRef: string;
+        paymentUrl: string;
+        expiresAt?: string;
+      }>(`/payments/orders/${order.id}/initiate`, { returnUrl });
+
+      if (
+        paymentTransaction.paymentUrl &&
+        !paymentTransaction.paymentUrl.includes('payment-gateway.local')
+      ) {
+        window.location.href = paymentTransaction.paymentUrl;
+        return;
+      }
+
+      showToast({
+        tone: 'warning',
+        title: 'Cổng thanh toán chưa sẵn sàng',
+        description: 'Không lấy được đường dẫn thanh toán. Vui lòng thử lại sau hoặc chọn hỗ trợ.',
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      showToast({
+        tone: 'error',
+        title: 'Không thể thanh toán lại',
+        description:
+          message || 'Đơn hàng đã quá hạn hoặc hiện không thể tạo giao dịch thanh toán mới.',
+      });
+      await refreshOrder(order.id, true);
+    } finally {
+      setRetryingPayment(false);
+    }
+  };
   const isPickup = order.fulfillmentType === 'pickup';
+  const isOnlinePayment = ['momo', 'vnpay', 'zalopay'].includes(order.paymentMethod);
+  const canRetryPayment = Boolean(order.canRetryPayment);
+  const canCancelUnpaid = Boolean(order.canCancelUnpaid);
+  const isPaymentExpired =
+    order.paymentBlockedReason === 'PAYMENT_EXPIRED' ||
+    (isOnlinePayment &&
+      ['unpaid', 'failed'].includes(order.paymentStatus) &&
+      Number(order.paymentTimeRemainingSeconds ?? 0) <= 0);
 
   return (
     <div style={{ background: '#f2f0eb', minHeight: '80vh' }}>
@@ -772,6 +882,19 @@ export default function OrderDetail() {
               <p className="mt-1 text-xs font-bold" style={{ color: paymentStatusInfo.color }}>
                 {paymentStatusInfo.label}
               </p>
+              {isOnlinePayment && ['unpaid', 'failed'].includes(order.paymentStatus) ? (
+                <div
+                  className={`mt-4 rounded-2xl border px-4 py-3 text-xs font-semibold ${
+                    isPaymentExpired
+                      ? 'border-red-200 bg-red-50 text-red-700'
+                      : 'border-amber-200 bg-amber-50 text-amber-800'
+                  }`}
+                >
+                  {isPaymentExpired
+                    ? 'Đã quá hạn thanh toán. Đơn sẽ được tự hủy hoặc đã bị hủy bởi hệ thống.'
+                    : `Đơn sẽ tự hủy sau ${formatCountdown(order.paymentTimeRemainingSeconds)} nếu chưa thanh toán.`}
+                </div>
+              ) : null}
             </div>
 
             {order.note ? (
@@ -811,25 +934,58 @@ export default function OrderDetail() {
                 </>
               ) : null}
               {(order.status === 'delivered' || order.status === 'partial_delivered') ? (
+                <div className="space-y-2">
+                  <p className={`rounded-2xl px-4 py-3 text-xs font-semibold ${
+                    order.canCreateReturn === false
+                      ? 'border border-amber-200 bg-amber-50 text-amber-800'
+                      : 'bg-[#d4e9e2] text-[#1E3932]'
+                  }`}>
+                    {order.canCreateReturn === false
+                      ? getReturnBlockedMessage(order.returnBlockedReason)
+                      : `Có thể yêu cầu trả hàng đến ${order.returnDeadline ? formatDate(order.returnDeadline) : 'hết thời hạn 7 ngày'}.`}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={openReturnModal}
+                    disabled={order.canCreateReturn === false || !order.items.some((item) => Number(item.returnableQuantity ?? item.quantity) > 0)}
+                    className="flex w-full items-center justify-center gap-2 rounded-full border border-red-200 py-2.5 text-sm font-bold text-red-600 transition hover:bg-red-50 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <RotateCcw size={15} />
+                    Tạo yêu cầu trả hàng
+                  </button>
+                </div>
+              ) : null}
+              {canRetryPayment ? (
                 <button
                   type="button"
-                  onClick={openReturnModal}
-                  className="flex w-full items-center justify-center gap-2 rounded-full border border-red-200 py-2.5 text-sm font-bold text-red-600 transition hover:bg-red-50 active:scale-95"
+                  onClick={() => void handleRetryPayment()}
+                  disabled={retryingPayment}
+                  className="flex w-full items-center justify-center gap-2 rounded-full bg-[#006241] py-2.5 text-sm font-black text-white transition hover:bg-[#005234] active:scale-95 disabled:opacity-60"
                 >
-                  <RotateCcw size={15} />
-                  Tạo yêu cầu trả hàng
+                  {retryingPayment ? (
+                    <LoaderCircle size={15} className="animate-spin" />
+                  ) : (
+                    <CreditCard size={15} />
+                  )}
+                  Thanh toán lại
                 </button>
               ) : null}
-              {order.status === 'pending' &&
-              order.paymentStatus !== 'paid' &&
-              order.paymentStatus !== 'partial_refunded' ? (
+              {canCancelUnpaid ? (
                 <button
                   onClick={async () => {
                     if (!window.confirm('Bạn có chắc muốn hủy đơn hàng này?')) return;
                     try {
                       await clientApi.patch(`/orders/${order.id}/cancel`);
                       setOrder((current) =>
-                        current ? { ...current, status: 'cancelled' } : current,
+                        current
+                          ? {
+                              ...current,
+                              status: 'cancelled',
+                              canRetryPayment: false,
+                              canCancelUnpaid: false,
+                              paymentBlockedReason: 'ORDER_CANCELLED',
+                            }
+                          : current,
                       );
                     } catch (error) {
                       showToast({
@@ -914,9 +1070,13 @@ export default function OrderDetail() {
                   }}
                   className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
                 >
-                  {order.items.map((it) => (
-                    <option key={it.id} value={it.id}>{it.productName} × {it.quantity}</option>
-                  ))}
+                  {order.items
+                    .filter((it) => Number(it.returnableQuantity ?? it.quantity) > 0)
+                    .map((it) => (
+                      <option key={it.id} value={it.id}>
+                        {it.productName} × còn trả {it.returnableQuantity ?? it.quantity}
+                      </option>
+                    ))}
                 </select>
               </label>
               <label className="block">
@@ -924,7 +1084,7 @@ export default function OrderDetail() {
                 <input
                   type="number"
                   min="1"
-                  max={order.items.find((item) => item.id === returnItemId)?.quantity ?? 1}
+                  max={order.items.find((item) => item.id === returnItemId)?.returnableQuantity ?? order.items.find((item) => item.id === returnItemId)?.quantity ?? 1}
                   value={returnQuantity}
                   onChange={(e) => setReturnQuantity(e.target.value)}
                   className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
@@ -1019,3 +1179,4 @@ function TrackingStat({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+

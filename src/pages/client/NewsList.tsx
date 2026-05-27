@@ -128,15 +128,15 @@ export default function NewsList() {
                 to={`/client/news/${articles[0].slug}`}
                 className="client-card group mb-8 grid overflow-hidden transition-all md:grid-cols-2"
               >
-                <div className="overflow-hidden bg-[#d4e9e2]">
+                <div className="flex min-h-64 items-center justify-center overflow-hidden bg-[#eef6f1] md:min-h-80">
                   {articles[0].titleImageUrl ? (
                     <img
                       src={articles[0].titleImageUrl}
                       alt={articles[0].title}
-                      className="h-64 w-full object-cover transition-transform duration-500 group-hover:scale-105 md:h-full"
+                      className="h-64 w-full object-contain transition-transform duration-500 group-hover:scale-105 md:h-80"
                     />
                   ) : (
-                    <div className="flex h-64 items-center justify-center md:h-full">
+                    <div className="flex h-64 items-center justify-center md:h-80">
                       <span className="text-6xl">🌾</span>
                     </div>
                   )}
@@ -173,15 +173,15 @@ export default function NewsList() {
                   to={`/client/news/${article.slug}`}
                   className="client-card group overflow-hidden transition-all"
                 >
-                  <div className="overflow-hidden bg-[#d4e9e2]">
+                  <div className="flex h-48 items-center justify-center overflow-hidden bg-[#eef6f1]">
                     {article.titleImageUrl ? (
                       <img
                         src={article.titleImageUrl}
                         alt={article.title}
-                        className="h-44 w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                        className="h-full w-full object-contain transition-transform duration-500 group-hover:scale-105"
                       />
                     ) : (
-                      <div className="flex h-44 items-center justify-center">
+                      <div className="flex h-full items-center justify-center">
                         <span className="text-5xl">{['🌾', '🌿', '🚜', '💧', '🌱'][idx % 5]}</span>
                       </div>
                     )}

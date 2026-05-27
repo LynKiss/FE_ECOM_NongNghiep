@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
+  AlertCircle,
   BarChart3,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  ClipboardList,
   CreditCard,
+  FileText,
   LoaderCircle,
   Mail,
   RefreshCw,
@@ -13,6 +16,8 @@ import {
   Settings,
   ToggleLeft,
   ToggleRight,
+  UserRound,
+  X,
 } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { useToast } from '../hooks/useToast';
@@ -219,6 +224,7 @@ const PROVIDER_LABELS: Record<string, { label: string; color: string }> = {
   vnpay: { label: 'VNPay', color: '#005BAA' },
   zalopay: { label: 'ZaloPay', color: '#0068FF' },
   paypal: { label: 'PayPal', color: '#003087' },
+  credit: { label: 'Công nợ', color: '#007A4D' },
 };
 
 const STATUS_CFG: Record<TxStatus, { label: string; cls: string }> = {
@@ -1182,6 +1188,10 @@ export default function Payments() {
 
       {activeTab === 'transactions' && (
         <>
+          <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+            Lịch sử giao dịch dùng để đối soát MoMo, VNPay, COD và thu tiền công nợ. Dữ liệu ở đây giúp kiểm tra giao dịch thành công, chờ xử lý, thất bại, callback muộn và các khoản thu thủ công cần chứng từ.
+          </div>
+
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {[
               { label: 'Tổng GD', value: meta.total, color: 'text-primary' },

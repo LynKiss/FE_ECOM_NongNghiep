@@ -385,12 +385,12 @@ export default function News() {
                 className="group flex flex-col overflow-hidden rounded-2xl border border-on-surface-variant/8 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg"
               >
                 {/* Thumbnail */}
-                <div className="relative h-44 w-full overflow-hidden bg-surface">
+                <div className="relative flex h-48 w-full items-center justify-center overflow-hidden bg-[#f7f5ef]">
                   {article.titleImageUrl ? (
                     <img
                       src={article.titleImageUrl}
                       alt={article.title}
-                      className="h-full w-full object-cover transition-transform group-hover:scale-105"
+                      className="h-full w-full object-contain p-2 transition-transform group-hover:scale-105"
                     />
                   ) : (
                     <div className="flex h-full items-center justify-center text-on-surface-variant/40">
@@ -569,11 +569,11 @@ export default function News() {
             <FieldLabel label={isVietnamese ? 'Ảnh bìa' : 'Cover image'}>
               <div className="space-y-2">
                 {coverPreview ? (
-                  <div className="relative overflow-hidden rounded-2xl">
+                  <div className="relative flex h-44 items-center justify-center overflow-hidden rounded-2xl bg-[#f7f5ef]">
                     <img
                       src={coverPreview}
                       alt="Cover preview"
-                      className="h-40 w-full object-cover"
+                      className="h-full w-full object-contain p-2"
                     />
                     <button
                       type="button"

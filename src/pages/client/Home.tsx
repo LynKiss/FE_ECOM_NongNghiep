@@ -635,9 +635,9 @@ export default function Home() {
                   <div className="relative overflow-hidden" style={{ background: '#d4e9e2' }}>
                     {article.titleImageUrl ? (
                       <img src={article.titleImageUrl} alt={article.title}
-                        className="h-44 w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                        className="h-48 w-full object-contain bg-[#eef6f1] transition-transform duration-500 group-hover:scale-105" />
                     ) : (
-                      <div className="flex h-44 items-center justify-center">
+                    <div className="flex h-48 items-center justify-center bg-[#eef6f1]">
                         <span className="text-5xl">{['🌾', '🌿', '🚜'][idx % 3]}</span>
                       </div>
                     )}

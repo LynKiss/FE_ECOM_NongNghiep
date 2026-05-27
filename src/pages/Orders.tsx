@@ -1519,9 +1519,11 @@ export default function Orders() {
 
 function normalizeHistoryNote(note: string | null): string | null {
   if (!note) return null;
+  const repaired = repairMojibake(note);
   const map: Record<string, string> = {
     'Order created': 'Đơn hàng đã được tạo',
     'Order created (backordered — chờ nhập kho)': 'Đơn hàng được tạo (đang chờ nhập kho)',
+    'Order created (backordered â€” chá» nháº­p kho)': 'Đơn hàng được tạo (đang chờ nhập kho)',
     'Order status updated by admin': 'Cập nhật trạng thái bởi admin',
     'Order cancelled by user': 'Khách hàng đã hủy đơn',
     'Backorder cancelled': 'Đã hủy đơn chờ hàng',
@@ -1529,8 +1531,27 @@ function normalizeHistoryNote(note: string | null): string | null {
     'Auto-cancelled by reconciliation cron (unpaid > 30 min)': 'Tự động hủy do chưa thanh toán sau 30 phút',
     'Guest order created': 'Đơn hàng khách vãng lai đã được tạo',
     'Guest order checkout': 'Khách vãng lai đặt hàng',
+    'Đơn hàng đã được tạo': 'Đơn hàng đã được tạo',
+    'Đơn hàng được tạo (đang chờ nhập kho)': 'Đơn hàng được tạo (đang chờ nhập kho)',
+    'Đơn hàng khách vãng lai đã được tạo': 'Đơn hàng khách vãng lai đã được tạo',
+    'Cập nhật trạng thái bởi admin': 'Cập nhật trạng thái bởi admin',
+    'Khách hàng đã hủy đơn': 'Khách hàng đã hủy đơn',
+    'Đã hủy đơn chờ hàng': 'Đã hủy đơn chờ hàng',
+    'Chờ hoàn tiền trước khi hủy đơn đã thu tiền': 'Chờ hoàn tiền trước khi hủy đơn đã thu tiền',
+    'Khách hàng xác nhận đã nhận hàng': 'Khách hàng xác nhận đã nhận hàng',
   };
-  return map[note] ?? note;
+  return map[note] ?? map[repaired] ?? repaired;
+}
+
+function repairMojibake(value: string): string {
+  if (!/[ÃÂÄáºÆâ]/.test(value)) return value;
+  try {
+    const bytes = Uint8Array.from(value, (char) => char.charCodeAt(0) & 0xff);
+    const decoded = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+    return decoded.replace(/�+/g, '').trim() || value;
+  } catch {
+    return value;
+  }
 }
 
 function getPaymentMethodLabel(method: string | undefined | null): string {
@@ -1547,6 +1568,85 @@ function getPaymentMethodLabel(method: string | undefined | null): string {
 }
 
 function getStatusLabel(status: OrderStatus, isVietnamese: boolean) {
+  const labels: Record<OrderStatus, string> = isVietnamese
+    ? {
+      backordered: 'Chờ hàng',
+      pending: 'Chờ xử lý',
+      confirmed: 'Đã xác nhận',
+      processing: 'Đang xử lý',
+      shipping: 'Đang giao',
+      delivered: 'Đã giao',
+      partial_delivered: 'Giao một phần',
+      partial_returned: 'Trả một phần',
+      cancelled: 'Đã hủy',
+      returned: 'Đã trả hàng',
+    }
+    : {
+      backordered: 'Backordered',
+      pending: 'Pending',
+      confirmed: 'Confirmed',
+      processing: 'Processing',
+      shipping: 'Shipping',
+      delivered: 'Delivered',
+      partial_delivered: 'Partial delivered',
+      partial_returned: 'Partial returned',
+      cancelled: 'Cancelled',
+      returned: 'Returned',
+    };
+
+  return labels[status];
+}
+
+function getPaymentLabel(status: PaymentStatus, isVietnamese: boolean) {
+  const labels: Record<PaymentStatus, string> = isVietnamese
+    ? {
+      unpaid: 'Chưa thanh toán',
+      paid: 'Đã thanh toán',
+      failed: 'Thất bại',
+      partial_refunded: 'Hoàn 1 phần',
+      refunded: 'Đã hoàn tiền',
+    }
+    : {
+      unpaid: 'Unpaid',
+      paid: 'Paid',
+      failed: 'Failed',
+      partial_refunded: 'Partial refunded',
+      refunded: 'Refunded',
+    };
+
+  return labels[status];
+}
+
+function legacyNormalizeHistoryNote(note: string | null): string | null {
+  if (!note) return null;
+  const map: Record<string, string> = {
+    'Order created': 'Đơn hàng đã được tạo',
+    'Order created (backordered — chờ nhập kho)': 'Đơn hàng được tạo (đang chờ nhập kho)',
+    'Order status updated by admin': 'Cập nhật trạng thái bởi admin',
+    'Order cancelled by user': 'Khách hàng đã hủy đơn',
+    'Backorder cancelled': 'Đã hủy đơn chờ hàng',
+    'Auto-cancel by reconciliation (unpaid > 30min)': 'Tự động hủy do chưa thanh toán sau 30 phút',
+    'Auto-cancelled by reconciliation cron (unpaid > 30 min)': 'Tự động hủy do chưa thanh toán sau 30 phút',
+    'Guest order created': 'Đơn hàng khách vãng lai đã được tạo',
+    'Guest order checkout': 'Khách vãng lai đặt hàng',
+  };
+  return map[note] ?? note;
+}
+
+function brokenGetPaymentMethodLabel(method: string | undefined | null): string {
+  const map: Record<string, string> = {
+    cod: 'COD (thanh toán khi nhận)',
+    momo: 'Ví MoMo',
+    vnpay: 'VNPay',
+    zalopay: 'ZaloPay',
+    bank_transfer: 'Chuyển khoản ngân hàng',
+    credit_card: 'Thẻ tín dụng',
+  };
+  if (!method) return '-';
+  return map[method.toLowerCase()] ?? method.toUpperCase();
+}
+
+function brokenGetStatusLabel(status: OrderStatus, isVietnamese: boolean) {
   const labels: Record<OrderStatus, string> = isVietnamese
     ? {
       backordered: 'Chờ hàng',
@@ -1576,7 +1676,7 @@ function getStatusLabel(status: OrderStatus, isVietnamese: boolean) {
   return labels[status];
 }
 
-function getPaymentLabel(status: PaymentStatus, isVietnamese: boolean) {
+function brokenGetPaymentLabel(status: PaymentStatus, isVietnamese: boolean) {
   const labels: Record<PaymentStatus, string> = isVietnamese
     ? {
       unpaid: 'Chưa thanh toán',

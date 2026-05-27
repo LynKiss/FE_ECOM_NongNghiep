@@ -619,7 +619,7 @@ export default function Products() {
                     className="h-4 w-4 rounded border-on-surface-variant/20 accent-primary"
                   />
                 </th>
-                <th className="px-4 py-5">ID</th>
+                <th className="px-4 py-5">STT</th>
                 <th className="px-4 py-5">
                   <button type="button" onClick={() => handleSort('product_name')} className="inline-flex items-center gap-1">
                     {isVi ? 'Tên sản phẩm' : 'Product name'}
@@ -671,7 +671,7 @@ export default function Products() {
                   </td>
                 </tr>
               ) : (
-                products.map((product) => (
+                products.map((product, index) => (
                   <tr key={product.productId} className="group transition-colors hover:bg-on-surface-variant/5">
                     <td className="px-4 py-4">
                       <input
@@ -681,19 +681,29 @@ export default function Products() {
                         className="h-4 w-4 rounded border-on-surface-variant/20 accent-primary"
                       />
                     </td>
-                    <td className="px-4 py-4 font-mono text-xs text-on-surface-variant">
+                    <td className="px-4 py-4 font-bold text-on-surface">
+                      {(meta.page - 1) * meta.limit + index + 1}
+                    </td>
+                    <td className="px-4 py-4">
+                      <div className="font-bold text-on-surface">{product.productName}</div>
+                      <div className="mt-1 max-w-48 truncate font-mono text-[10px] text-on-surface-variant/45" title={product.productId}>
+                        {product.productId}
+                      </div>
+                    </td>
+                    <td className="hidden px-4 py-4 font-mono text-xs text-on-surface-variant" aria-hidden="true">
                       <span title={product.productId} className="cursor-default">
                         {product.productId.length > 12
                           ? `${product.productId.slice(0, 12)}…`
                           : product.productId}
                       </span>
                     </td>
-                    <td className="px-4 py-4 font-bold text-on-surface">{product.productName}</td>
                     <td className="px-4 py-4">
                       {product.primaryImageUrl ? (
-                        <img src={product.primaryImageUrl} alt={product.productName} className="h-11 w-11 rounded-xl object-cover" />
+                        <div className="flex h-16 w-16 items-center justify-center rounded-xl border border-on-surface-variant/10 bg-[#f7f5ef] p-1">
+                          <img src={product.primaryImageUrl} alt={product.productName} className="h-full w-full object-contain" />
+                        </div>
                       ) : (
-                        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-surface text-xs text-on-surface-variant">N/A</div>
+                        <div className="flex h-16 w-16 items-center justify-center rounded-xl bg-surface text-xs text-on-surface-variant">N/A</div>
                       )}
                     </td>
                     <td className="px-4 py-4 font-semibold text-on-surface">{currency.format(Number(product.productPrice))}</td>

@@ -143,13 +143,13 @@ export function formatPercent(value: number) {
 export function getRiceSeverityLabel(severity: RiceDiseaseSeverity) {
   switch (severity) {
     case 'low':
-      return 'Thap';
+      return 'Thấp';
     case 'medium':
-      return 'Trung binh';
+      return 'Trung bình';
     case 'high':
       return 'Cao';
     case 'critical':
-      return 'Rat cao';
+      return 'Rất cao';
     default:
       return severity;
   }
@@ -186,11 +186,11 @@ export function getRecommendationTone(level: RiceDiagnosisRecommendationLevel) {
 export function getRecommendationLabel(level: RiceDiagnosisRecommendationLevel) {
   switch (level) {
     case 'low':
-      return 'Can kiem tra them';
+      return 'Cần kiểm tra thêm';
     case 'review':
-      return 'Muc tham khao';
+      return 'Mức tham khảo';
     case 'high':
-      return 'Do tin cay cao';
+      return 'Độ tin cậy cao';
     default:
       return level;
   }
@@ -199,17 +199,17 @@ export function getRecommendationLabel(level: RiceDiagnosisRecommendationLevel) 
 export function getQualityIssueLabel(issue: string) {
   switch (issue) {
     case 'image_too_small':
-      return 'Anh qua nho';
+      return 'Ảnh quá nhỏ';
     case 'too_dark':
-      return 'Anh qua toi';
+      return 'Ảnh quá tối';
     case 'too_bright':
-      return 'Anh qua sang';
+      return 'Ảnh quá sáng';
     case 'low_contrast':
-      return 'Do tuong phan thap';
+      return 'Độ tương phản thấp';
     case 'blurry':
-      return 'Anh bi mo';
+      return 'Ảnh bị mờ';
     case 'empty_image':
-      return 'Anh khong hop le';
+      return 'Ảnh không hợp lệ';
     default:
       return issue.replace(/[_-]+/g, ' ');
   }
