@@ -66,6 +66,8 @@ const ClientRegisterPage = lazy(() => import('../features/client/register/page')
 const ClientAccountPage = lazy(() => import('../features/client/account/page'));
 const ClientOrdersPage = lazy(() => import('../features/client/orders/page'));
 const ClientOrderDetailPage = lazy(() => import('../features/client/order-detail/page'));
+const ClientReturnsPage = lazy(() => import('../pages/client/Returns'));
+const ClientMyActivityPage = lazy(() => import('../pages/client/MyActivity'));
 const ClientWishlistPage = lazy(() => import('../features/client/wishlist/page'));
 const ClientAddressesPage = lazy(() => import('../features/client/addresses/page'));
 const ClientRiceDiagnosisPage = lazy(() => import('../features/client/rice-diagnosis/page'));
@@ -167,6 +169,8 @@ export const router = createBrowserRouter([
           { path: 'account', element: clientSuspense(<ClientAccountPage />) },
           { path: 'orders', element: clientSuspense(<ClientOrdersPage />) },
           { path: 'orders/:id', element: clientSuspense(<ClientOrderDetailPage />) },
+          { path: 'returns', element: clientSuspense(<ClientReturnsPage />) },
+          { path: 'my-activity', element: clientSuspense(<ClientMyActivityPage />) },
           { path: 'wishlist', element: clientSuspense(<ClientWishlistPage />) },
           { path: 'account/addresses', element: clientSuspense(<ClientAddressesPage />) },
           { path: 'rice-diagnosis', element: clientSuspense(<ClientRiceDiagnosisPage />) },

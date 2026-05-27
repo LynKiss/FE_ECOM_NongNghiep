@@ -34,6 +34,12 @@ type OrderItem = {
   productName: string;
   primaryImageUrl: string | null;
   quantity: number;
+  quantityDelivered?: number;
+  returnableQuantity?: number;
+  returnedQuantity?: number;
+  returnDeadline?: string | null;
+  canCreateReturn?: boolean;
+  returnBlockedReason?: string | null;
   unitPrice: number;
   lineTotal: number;
 };
@@ -58,6 +64,10 @@ type OrderDetailResponse = {
   address: string;
   note: string | null;
   createdAt: string;
+  returnWindowDays?: number;
+  returnDeadline?: string | null;
+  canCreateReturn?: boolean;
+  returnBlockedReason?: string | null;
   items: OrderItem[];
 };
 
@@ -133,6 +143,12 @@ function getMapEmbedUrl(latitude: number, longitude: number) {
   return `https://www.openstreetmap.org/export/embed.html?bbox=${
     longitude - 0.03
   },${latitude - 0.03},${longitude + 0.03},${latitude + 0.03}&layer=mapnik&marker=${latitude},${longitude}`;
+}
+
+function getReturnBlockedMessage(reason?: string | null) {
+  if (reason === 'RETURN_WINDOW_EXPIRED') return 'Đã quá hạn 7 ngày kể từ khi nhận hàng.';
+  if (reason === 'RETURN_NOT_DELIVERED_YET') return 'Chỉ tạo trả hàng sau khi đơn đã được giao.';
+  return 'Hiện chưa thể tạo yêu cầu trả hàng cho đơn này.';
 }
 
 export default function OrderDetail() {
@@ -353,7 +369,20 @@ export default function OrderDetail() {
 
   const openReturnModal = () => {
     if (!order?.items?.length) return;
-    setReturnItemId(order.items[0].id);
+    if (!order.canCreateReturn) {
+      showToast({
+        tone: 'warning',
+        title: 'Chưa thể tạo yêu cầu trả hàng',
+        description: getReturnBlockedMessage(order.returnBlockedReason),
+      });
+      return;
+    }
+    const target = order.items.find((item) => Number(item.returnableQuantity ?? item.quantity) > 0);
+    if (!target) {
+      showToast({ tone: 'warning', title: 'Không còn sản phẩm có thể trả' });
+      return;
+    }
+    setReturnItemId(target.id);
     setReturnQuantity('1');
     setReturnReason('damaged');
     setReturnDescription('');
@@ -368,7 +397,7 @@ export default function OrderDetail() {
       !selectedReturnItem ||
       !Number.isInteger(quantity) ||
       quantity <= 0 ||
-      quantity > selectedReturnItem.quantity
+      quantity > Number(selectedReturnItem.returnableQuantity ?? selectedReturnItem.quantity)
     ) {
       showToast({
         tone: 'error',
@@ -811,14 +840,26 @@ export default function OrderDetail() {
                 </>
               ) : null}
               {(order.status === 'delivered' || order.status === 'partial_delivered') ? (
-                <button
-                  type="button"
-                  onClick={openReturnModal}
-                  className="flex w-full items-center justify-center gap-2 rounded-full border border-red-200 py-2.5 text-sm font-bold text-red-600 transition hover:bg-red-50 active:scale-95"
-                >
-                  <RotateCcw size={15} />
-                  Tạo yêu cầu trả hàng
-                </button>
+                <div className="space-y-2">
+                  <p className={`rounded-2xl px-4 py-3 text-xs font-semibold ${
+                    order.canCreateReturn === false
+                      ? 'border border-amber-200 bg-amber-50 text-amber-800'
+                      : 'bg-[#d4e9e2] text-[#1E3932]'
+                  }`}>
+                    {order.canCreateReturn === false
+                      ? getReturnBlockedMessage(order.returnBlockedReason)
+                      : `Có thể yêu cầu trả hàng đến ${order.returnDeadline ? formatDate(order.returnDeadline) : 'hết thời hạn 7 ngày'}.`}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={openReturnModal}
+                    disabled={order.canCreateReturn === false || !order.items.some((item) => Number(item.returnableQuantity ?? item.quantity) > 0)}
+                    className="flex w-full items-center justify-center gap-2 rounded-full border border-red-200 py-2.5 text-sm font-bold text-red-600 transition hover:bg-red-50 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <RotateCcw size={15} />
+                    Tạo yêu cầu trả hàng
+                  </button>
+                </div>
               ) : null}
               {order.status === 'pending' &&
               order.paymentStatus !== 'paid' &&
@@ -914,9 +955,13 @@ export default function OrderDetail() {
                   }}
                   className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
                 >
-                  {order.items.map((it) => (
-                    <option key={it.id} value={it.id}>{it.productName} × {it.quantity}</option>
-                  ))}
+                  {order.items
+                    .filter((it) => Number(it.returnableQuantity ?? it.quantity) > 0)
+                    .map((it) => (
+                      <option key={it.id} value={it.id}>
+                        {it.productName} × còn trả {it.returnableQuantity ?? it.quantity}
+                      </option>
+                    ))}
                 </select>
               </label>
               <label className="block">
@@ -924,7 +969,7 @@ export default function OrderDetail() {
                 <input
                   type="number"
                   min="1"
-                  max={order.items.find((item) => item.id === returnItemId)?.quantity ?? 1}
+                  max={order.items.find((item) => item.id === returnItemId)?.returnableQuantity ?? order.items.find((item) => item.id === returnItemId)?.quantity ?? 1}
                   value={returnQuantity}
                   onChange={(e) => setReturnQuantity(e.target.value)}
                   className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"

@@ -21,9 +21,13 @@ type SrStatus = 'draft' | 'confirmed' | 'cancelled';
 
 type PoItem = {
   productId: string;
+  productName?: string | null;
+  productCode?: string | null;
+  primaryImageUrl?: string | null;
   unit: string;
   unitPerBase: number;
   qtyOrdered: number;
+  qtyReceived?: number;
   unitPrice: number;
   notes: string;
 };
@@ -167,6 +171,15 @@ function LabelCls({ children }: { children: ReactNode }) {
     <span className="text-xs font-black uppercase tracking-[0.14em] text-on-surface-variant/60">
       {children}
     </span>
+  );
+}
+
+function InfoLine({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
+  return (
+    <div>
+      <p className="text-xs font-black uppercase tracking-wide text-on-surface-variant/70">{label}</p>
+      <p className={`mt-1 ${strong ? 'text-lg font-black text-primary' : 'font-semibold text-on-surface'}`}>{value}</p>
+    </div>
   );
 }
 
@@ -470,7 +483,7 @@ function PoTab({
         </div>
 
         {/* Detail row */}
-        {detailId && detail && (
+        {false && detailId && detail && (
           <div className="border-t border-on-surface/8 bg-surface/40 px-6 py-5">
             <p className="mb-3 text-xs font-black uppercase tracking-widest text-on-surface-variant/50">Chi tiết dòng hàng — {detail.poCode}</p>
             <div className="overflow-x-auto">
@@ -529,6 +542,101 @@ function PoTab({
           </div>
         )}
       </section>
+
+      {(detailId || detail) && (
+        <div className="fixed inset-0 z-50 flex justify-end bg-black/35">
+          <aside className="h-full w-full max-w-3xl overflow-y-auto bg-surface p-6 shadow-xl">
+            <div className="mb-5 flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-black text-on-surface">Chi tiết PO</h2>
+                <p className="text-sm text-on-surface-variant">{detail?.poCode ?? 'Đang tải...'}</p>
+              </div>
+              <button type="button" onClick={() => setDetailId(null)} className="rounded-lg p-2 hover:bg-surface-variant">
+                <X size={20} />
+              </button>
+            </div>
+
+            {!detail ? (
+              <div className="py-16 text-center text-on-surface-variant">Đang tải chi tiết...</div>
+            ) : (
+              <div className="space-y-4">
+                <div className="grid gap-3 rounded-2xl border border-outline-variant p-4 sm:grid-cols-2">
+                  <InfoLine label="Mã PO" value={detail.poCode} />
+                  <InfoLine label="Trạng thái" value={PO_STATUS_LABEL[detail.status]} />
+                  <InfoLine label="Ngày đặt" value={detail.orderDate ? new Date(detail.orderDate).toLocaleDateString('vi-VN') : '-'} />
+                  <InfoLine label="Ngày dự kiến" value={detail.expectedDate ? new Date(detail.expectedDate).toLocaleDateString('vi-VN') : '-'} />
+                  <InfoLine label="Phí vận chuyển" value={fmt(detail.shippingCost)} />
+                  <InfoLine label="Chi phí khác" value={fmt(detail.otherCost)} />
+                </div>
+
+                <div className="rounded-2xl border border-outline-variant p-4">
+                  <h3 className="mb-3 font-black text-on-surface">Dòng sản phẩm</h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[680px] text-sm">
+                      <thead className="text-on-surface-variant">
+                        <tr>
+                          <th className="pb-2 text-left">Sản phẩm</th>
+                          <th className="pb-2 text-right">ĐVT</th>
+                          <th className="pb-2 text-right">SL đặt</th>
+                          <th className="pb-2 text-right">SL nhập</th>
+                          <th className="pb-2 text-right">Đơn giá</th>
+                          <th className="pb-2 text-right">Thành tiền</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-outline-variant">
+                        {(detail.items as PoItem[]).map((item, idx) => {
+                          const fallbackProduct = products.find((p) => p.productId === item.productId);
+                          const productName = item.productName ?? fallbackProduct?.productName ?? item.productId;
+                          const progress = item.qtyOrdered > 0 ? Math.min(100, ((item.qtyReceived ?? 0) / item.qtyOrdered) * 100) : 0;
+                          return (
+                            <tr key={`${item.productId}-${idx}`}>
+                              <td className="py-3 pr-4">
+                                <div className="flex items-center gap-3">
+                                  <div className="h-12 w-12 overflow-hidden rounded-xl bg-emerald-50">
+                                    {item.primaryImageUrl ? (
+                                      <img src={item.primaryImageUrl} alt={productName} className="h-full w-full object-cover" />
+                                    ) : (
+                                      <div className="flex h-full w-full items-center justify-center text-xs font-bold text-primary">SP</div>
+                                    )}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p className="line-clamp-2 font-bold text-on-surface">{productName}</p>
+                                    <p className="text-xs text-on-surface-variant">{item.productCode ?? item.productId}</p>
+                                    <div className="mt-1 h-1.5 w-32 overflow-hidden rounded-full bg-surface-variant">
+                                      <div className="h-full rounded-full bg-primary" style={{ width: `${progress}%` }} />
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="py-3 text-right text-on-surface-variant">{item.unit}</td>
+                              <td className="py-3 text-right">{item.qtyOrdered}</td>
+                              <td className="py-3 text-right">{item.qtyReceived ?? 0}</td>
+                              <td className="py-3 text-right">{fmt(item.unitPrice)}</td>
+                              <td className="py-3 text-right font-black">{fmt(item.qtyOrdered * Number(item.unitPrice))}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div className="grid gap-3 rounded-2xl border border-outline-variant p-4 sm:grid-cols-3">
+                  <InfoLine label="Tiền hàng" value={fmt(Number(detail.totalAmount) - Number(detail.shippingCost ?? 0) - Number(detail.otherCost ?? 0))} />
+                  <InfoLine label="Tổng chi phí" value={fmt(Number(detail.shippingCost ?? 0) + Number(detail.otherCost ?? 0))} />
+                  <InfoLine label="Tổng PO" value={fmt(detail.totalAmount)} strong />
+                </div>
+                {detail.notes ? (
+                  <div className="rounded-2xl border border-outline-variant p-4">
+                    <h3 className="mb-2 font-black text-on-surface">Ghi chú</h3>
+                    <p className="text-sm text-on-surface-variant">{detail.notes}</p>
+                  </div>
+                ) : null}
+              </div>
+            )}
+          </aside>
+        </div>
+      )}
 
       {/* Create PO Modal */}
       {modalOpen && (

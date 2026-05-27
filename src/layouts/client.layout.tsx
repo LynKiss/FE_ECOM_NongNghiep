@@ -21,6 +21,8 @@ import {
   ArrowRight,
   Sparkles,
   Sprout,
+  RotateCcw,
+  MessageSquareText,
 } from 'lucide-react';
 import { useLanguage } from '../i18n/language-context';
 import { useClientSession } from '../hooks/useClientSession';
@@ -46,7 +48,7 @@ type Notification = {
   message: string;
   channel: string;
   isRead: boolean;
-  metadata: { orderId?: string; type?: string } | null;
+  metadata: { orderId?: string; returnId?: string; targetUrl?: string; type?: string } | null;
   createdAt: string | null;
 };
 
@@ -179,7 +181,7 @@ export default function ClientLayout() {
     if (!session) return;
     const fetchNotifs = () =>
       void clientApi.get<Notification[]>('/notifications/me')
-        .then((data) => setNotifications(data.filter((n) => n.channel === 'system')))
+        .then((data) => setNotifications(data.filter((n) => String(n.channel).toLowerCase() === 'system')))
         .catch(() => { });
     fetchNotifs();
     const interval = setInterval(fetchNotifs, 60_000);
@@ -694,6 +696,13 @@ export default function ClientLayout() {
                       ) : (
                         notifications.slice(0, 20).map((n, idx) => {
                           const orderId = n.metadata?.orderId;
+                          const targetUrl =
+                            n.metadata?.targetUrl ??
+                            (n.metadata?.returnId
+                              ? `/client/returns?returnId=${n.metadata.returnId}`
+                              : orderId
+                                ? `/client/orders/${orderId}`
+                                : null);
                           const inner = (
                             <div className="flex items-start gap-2.5">
                               {!n.isRead && (
@@ -711,10 +720,10 @@ export default function ClientLayout() {
                             </div>
                           );
                           const cls = 'block w-full border-b border-black/5 px-4 py-3 last:border-0 text-left';
-                          return orderId ? (
+                          return targetUrl ? (
                             <Link
                               key={n.id ?? idx}
-                              to={`/client/orders/${orderId}`}
+                              to={targetUrl}
                               className={`${cls} transition hover:bg-[#006241]/5`}
                               onClick={() => setNotifOpen(false)}
                             >
@@ -806,6 +815,20 @@ export default function ClientLayout() {
                         className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-[#1E3932] transition hover:bg-[#006241]/8"
                       >
                         <Package size={15} /> Đơn hàng
+                      </Link>
+                      <Link
+                        to="/client/returns"
+                        onClick={() => setUserMenuOpen(false)}
+                        className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-[#1E3932] transition hover:bg-[#006241]/8"
+                      >
+                        <RotateCcw size={15} /> Trả hàng của tôi
+                      </Link>
+                      <Link
+                        to="/client/my-activity"
+                        onClick={() => setUserMenuOpen(false)}
+                        className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-[#1E3932] transition hover:bg-[#006241]/8"
+                      >
+                        <MessageSquareText size={15} /> Đánh giá & bình luận
                       </Link>
                       <Link
                         to="/client/wishlist"

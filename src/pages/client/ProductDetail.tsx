@@ -42,6 +42,7 @@ type Product = {
   ratingAverage: string;
   ratingCount: number;
   soldCount?: number;
+  primaryImageUrl?: string | null;
   images: ProductImage[];
   category: { categoryId: string; categoryName: string; categorySlug: string } | null;
   subcategory: { subcategoryId: string; subcategoryName: string } | null;
@@ -63,6 +64,13 @@ type RelatedProduct = {
   basePrice?: string;
   primaryImageUrl: string | null;
 };
+
+type RecentlyViewedProduct = RelatedProduct & {
+  viewedAt: number;
+};
+
+const RECENTLY_VIEWED_KEY = 'agri_recently_viewed_products';
+const RECENTLY_VIEWED_MAX = 12;
 
 type RecommendationResponse = {
   items?: RelatedProduct[];
@@ -100,6 +108,46 @@ function formatPrice(price: number | string) {
   return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(Number(price));
 }
 
+function readRecentlyViewedProducts(): RecentlyViewedProduct[] {
+  try {
+    const raw = localStorage.getItem(RECENTLY_VIEWED_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((item) => item?.productId && item?.productName) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeRecentlyViewedProduct(product: Product) {
+  const primaryImage =
+    [...(product.images ?? [])].sort((a, b) => {
+      if (a.isPrimary) return -1;
+      if (b.isPrimary) return 1;
+      return a.sortOrder - b.sortOrder;
+    })[0]?.imageUrl ?? product.primaryImageUrl ?? null;
+
+  const nextItem: RecentlyViewedProduct = {
+    productId: product.productId,
+    productName: product.productName,
+    effectivePrice: product.effectivePrice,
+    basePrice: product.basePrice,
+    primaryImageUrl: primaryImage,
+    viewedAt: Date.now(),
+  };
+
+  try {
+    const current = readRecentlyViewedProducts();
+    const next = [
+      nextItem,
+      ...current.filter((item) => item.productId !== product.productId),
+    ].slice(0, RECENTLY_VIEWED_MAX);
+    localStorage.setItem(RECENTLY_VIEWED_KEY, JSON.stringify(next));
+    return next;
+  } catch {
+    return [];
+  }
+}
+
 function StarRating({ value, onChange }: { value: number; onChange?: (v: number) => void }) {
   const [hover, setHover] = useState(0);
   return (
@@ -133,6 +181,7 @@ export default function ProductDetail() {
 
   const [product, setProduct] = useState<Product | null>(null);
   const [related, setRelated] = useState<RelatedProduct[]>([]);
+  const [recentlyViewed, setRecentlyViewed] = useState<RecentlyViewedProduct[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedImage, setSelectedImage] = useState(0);
   const [quantity, setQuantity] = useState(1);
@@ -186,6 +235,7 @@ export default function ProductDetail() {
       .get<Product>(`/products/${id}`)
       .then(async (data) => {
         setProduct(data);
+        setRecentlyViewed(writeRecentlyViewedProduct(data));
         void clientApi
           .get<RecommendationResponse>(
             `/intelligence/product-recommendations?productId=${encodeURIComponent(id)}&limit=8&historyDays=180`,
@@ -448,6 +498,10 @@ export default function ProductDetail() {
   const hasDiscount = displayPrice < originalPrice - 0.01;
   const savings = hasDiscount ? originalPrice - displayPrice : 0;
   const avgRating = Number(product.ratingAverage) || 0;
+  const visibleRecentlyViewed = recentlyViewed
+    .filter((item) => item.productId !== product.productId)
+    .filter((item) => !related.some((relatedItem) => relatedItem.productId === item.productId))
+    .slice(0, 4);
   const visibleReviews = (() => {
     let arr = [...reviews];
     if (reviewRatingFilter !== null) {
@@ -1202,6 +1256,39 @@ export default function ProductDetail() {
             <h2 className="mb-6 text-xl font-black text-[#1E3932]">Sản phẩm liên quan</h2>
             <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
               {related.slice(0, 4).map((p) => (
+                <Link
+                  key={p.productId}
+                  to={`/client/products/${p.productId}`}
+                  className="client-card-soft group overflow-hidden transition-all"
+                >
+                  <div className="overflow-hidden bg-[#f2f0eb]">
+                    {p.primaryImageUrl ? (
+                      <img
+                        src={p.primaryImageUrl}
+                        alt={p.productName}
+                        className="h-36 w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                      />
+                    ) : (
+                      <div className="flex h-36 items-center justify-center">
+                        <Leaf size={32} className="text-[#006241]/20" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="p-3">
+                    <p className="line-clamp-2 text-xs font-semibold text-[#1E3932]">{p.productName}</p>
+                    <p className="mt-1 text-sm font-black text-[#006241]">{formatPrice(p.effectivePrice)}</p>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {visibleRecentlyViewed.length > 0 && (
+          <div className="mt-12">
+            <h2 className="mb-6 text-xl font-black text-[#1E3932]">Sản phẩm đã xem</h2>
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+              {visibleRecentlyViewed.map((p) => (
                 <Link
                   key={p.productId}
                   to={`/client/products/${p.productId}`}
