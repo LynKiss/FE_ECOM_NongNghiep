@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { apiClient } from '../../../lib/api';
 import { showToast } from '../../../lib/toast-store';
+import { useConfirmDialog } from '../../../hooks/useConfirmDialog';
 
 type ReturnStatus = 'requested' | 'approved' | 'rejected' | 'received' | 'inspected' | 'refunded';
 type InspectionStatus = 'pending' | 'usable' | 'damaged' | 'return_to_supplier';
@@ -110,6 +111,7 @@ function getInspectionLabel(item: ReturnRequest) {
 }
 
 export default function ReturnsAdminPage() {
+  const { confirm: askConfirm, ConfirmDialog } = useConfirmDialog();
   const [items, setItems] = useState<ReturnRequest[]>([]);
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState('');
@@ -173,7 +175,15 @@ export default function ReturnsAdminPage() {
   }, [items]);
 
   const transitionStatus = async (returnId: string, nextStatus: ReturnStatus, confirmMsg?: string) => {
-    if (confirmMsg && !window.confirm(confirmMsg)) return;
+    if (confirmMsg) {
+      const ok = await askConfirm({
+        title: 'Xác nhận cập nhật trả hàng',
+        description: confirmMsg,
+        tone: nextStatus === 'rejected' ? 'danger' : 'warning',
+        confirmLabel: nextStatus === 'rejected' ? 'Từ chối' : 'Xác nhận',
+      });
+      if (!ok) return;
+    }
     setBusyId(returnId);
     try {
       await apiClient.patch(`/returns/${returnId}/status`, { status: nextStatus });
@@ -277,6 +287,7 @@ export default function ReturnsAdminPage() {
 
   return (
     <div className="space-y-6">
+      {ConfirmDialog}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <Package className="h-7 w-7 text-primary" />

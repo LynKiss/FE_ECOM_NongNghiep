@@ -115,7 +115,6 @@ export default function PricingPage() {
     try {
       await apiClient.post(`/pricing/suggestions/${s.suggestionId}/apply`, {
         retailPrice: Number(s.suggestedRetail),
-        bulkPrice: Number(s.suggestedBulk) || undefined,
       });
       showToast({ tone: 'success', title: 'Đã áp dụng giá lên sản phẩm' });
       setReloadKey((k) => k + 1);
@@ -186,7 +185,6 @@ export default function PricingPage() {
                 <th className="px-5 py-4 text-right">Hao hụt + CP bán</th>
                 <th className="px-5 py-4 text-right">% Lãi</th>
                 <th className="px-5 py-4 text-right">Giá lẻ đề xuất</th>
-                <th className="px-5 py-4 text-right">Giá thùng đề xuất</th>
                 <th className="px-5 py-4 text-center">Đã áp dụng</th>
                 <th className="px-5 py-4">Ngày tạo</th>
                 <th className="px-5 py-4" />
@@ -194,9 +192,9 @@ export default function PricingPage() {
             </thead>
             <tbody className="divide-y divide-on-surface/6">
               {loading ? (
-                <tr><td colSpan={9} className="py-16 text-center"><LoaderCircle size={18} className="mx-auto animate-spin text-primary" /></td></tr>
+                <tr><td colSpan={8} className="py-16 text-center"><LoaderCircle size={18} className="mx-auto animate-spin text-primary" /></td></tr>
               ) : filteredSuggestions.length === 0 ? (
-                <tr><td colSpan={9} className="py-16 text-center text-on-surface-variant">
+                <tr><td colSpan={8} className="py-16 text-center text-on-surface-variant">
                   <Tag size={28} className="mx-auto mb-3 text-primary/30" />
                   Chưa có đề xuất giá nào
                 </td></tr>
@@ -211,7 +209,6 @@ export default function PricingPage() {
                     </td>
                     <td className="px-5 py-3.5 text-right text-on-surface-variant">{Number(s.profitPct)}%</td>
                     <td className="px-5 py-3.5 text-right font-bold text-primary">{fmt(s.suggestedRetail)}</td>
-                    <td className="px-5 py-3.5 text-right font-bold text-on-surface">{fmt(s.suggestedBulk)}</td>
                     <td className="px-5 py-3.5 text-center">
                       {s.appliedAt ? (
                         <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-bold text-emerald-700">
@@ -293,8 +290,9 @@ function CalcModal({
   const [wastePct, setWastePct] = useState(2);
   const [sellingCostPct, setSellingCostPct] = useState(5);
   const [profitPct, setProfitPct] = useState(20);
-  const [unitPerBulk, setUnitPerBulk] = useState(1);
-  const [bulkDiscountPct, setBulkDiscountPct] = useState(5);
+  // Giá thùng (bulk) không dùng — gửi default cho BE (1 đơn vị, 0% chiết khấu)
+  const unitPerBulk = 1;
+  const bulkDiscountPct = 0;
   const [notes, setNotes] = useState('');
 
   const [preview, setPreview] = useState<PreviewResult | null>(null);
@@ -305,7 +303,6 @@ function CalcModal({
   // Apply state
   const [applyModalOpen, setApplyModalOpen] = useState(false);
   const [applyRetail, setApplyRetail] = useState(0);
-  const [applyBulk, setApplyBulk] = useState(0);
   const [applying, setApplying] = useState(false);
 
   const previewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -344,7 +341,7 @@ function CalcModal({
   }
 
   // Trigger preview whenever inputs change
-  useEffect(() => { triggerPreview(); }, [landedCost, wastePct, sellingCostPct, profitPct, bulkDiscountPct, unitPerBulk]);
+  useEffect(() => { triggerPreview(); }, [landedCost, wastePct, sellingCostPct, profitPct]);
 
   async function handleCalculate() {
     if (!productId) { showToast({ tone: 'error', title: 'Chọn sản phẩm' }); return; }
@@ -363,7 +360,6 @@ function CalcModal({
       });
       setCalcResult(result);
       setApplyRetail(result.breakdown.suggestedRetail);
-      setApplyBulk(result.breakdown.suggestedBulk);
       showToast({ tone: 'success', title: 'Đã lưu đề xuất giá' });
     } catch (err) {
       showToast({ tone: 'error', title: 'Tính giá thất bại', description: err instanceof Error ? err.message : '' });
@@ -378,7 +374,6 @@ function CalcModal({
     try {
       await apiClient.post(`/pricing/suggestions/${calcResult.suggestionId}/apply`, {
         retailPrice: applyRetail,
-        bulkPrice: applyBulk || undefined,
       });
       showToast({ tone: 'success', title: 'Đã áp dụng giá lên sản phẩm' });
       setApplyModalOpen(false);
@@ -416,10 +411,9 @@ function CalcModal({
           </FieldWrap>
 
           {selectedProduct && (
-            <div className="rounded-xl bg-surface px-4 py-3 text-xs text-on-surface-variant grid grid-cols-3 gap-2">
+            <div className="rounded-xl bg-surface px-4 py-3 text-xs text-on-surface-variant grid grid-cols-2 gap-2">
               <p>Giá bán hiện tại: <strong className="text-on-surface">{fmt(selectedProduct.productPrice)}</strong></p>
               <p>Giá vốn hiện tại: <strong className="text-on-surface">{selectedProduct.costPrice ? fmt(selectedProduct.costPrice) : '—'}</strong></p>
-              <p>Giá thùng hiện tại: <strong className="text-on-surface">{selectedProduct.bulkPrice ? fmt(selectedProduct.bulkPrice) : '—'}</strong></p>
             </div>
           )}
 
@@ -481,32 +475,6 @@ function CalcModal({
             </FieldWrap>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <FieldWrap label="Số lẻ / thùng" hint="1 thùng = bao nhiêu đơn vị lẻ">
-              <input
-                type="number"
-                min={1}
-                value={unitPerBulk}
-                onChange={(e) => setUnitPerBulk(Number(e.target.value))}
-                className={inputCls}
-              />
-            </FieldWrap>
-            <FieldWrap label="% Chiết khấu thùng" hint="Khách mua thùng được giảm so với giá lẻ × số lẻ">
-              <div className="relative">
-                <input
-                  type="number"
-                  min={0}
-                  max={50}
-                  step={0.5}
-                  value={bulkDiscountPct}
-                  onChange={(e) => setBulkDiscountPct(Number(e.target.value))}
-                  className={inputCls + ' pr-8'}
-                />
-                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-on-surface-variant">%</span>
-              </div>
-            </FieldWrap>
-          </div>
-
           {/* Live preview */}
           {(preview || previewing) && (
             <div className="rounded-2xl border border-primary/15 bg-primary/5 p-5 space-y-3">
@@ -517,7 +485,7 @@ function CalcModal({
               </div>
               {preview && (
                 <>
-                  <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+                  <div className="grid grid-cols-3 gap-3 text-sm">
                     <div className="rounded-xl bg-white px-3 py-2.5 shadow-sm">
                       <p className="text-[10px] uppercase tracking-wide text-on-surface-variant/60 font-black">Giá vốn</p>
                       <p className="mt-1 font-bold text-on-surface">{fmt(preview.landedCost)}</p>
@@ -530,10 +498,6 @@ function CalcModal({
                       <p className="text-[10px] uppercase tracking-wide text-primary/70 font-black">Giá lẻ đề xuất</p>
                       <p className="mt-1 font-bold text-primary text-base">{fmt(preview.suggestedRetail)}</p>
                       <p className="text-[10px] text-on-surface-variant/50">Trước làm tròn: {fmt(preview.rawRetail)}</p>
-                    </div>
-                    <div className="rounded-xl bg-white px-3 py-2.5 shadow-sm">
-                      <p className="text-[10px] uppercase tracking-wide text-on-surface-variant/60 font-black">Giá thùng ({preview.unitPerBulk} cái, -{preview.bulkDiscountPct}%)</p>
-                      <p className="mt-1 font-bold text-on-surface">{fmt(preview.suggestedBulk)}</p>
                     </div>
                   </div>
                   <p className="text-xs text-on-surface-variant/60">
@@ -552,9 +516,8 @@ function CalcModal({
           {calcResult && (
             <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 space-y-3">
               <p className="text-xs font-black uppercase tracking-widest text-emerald-700">Đề xuất đã được lưu</p>
-              <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="text-sm">
                 <p>Giá lẻ đề xuất: <strong className="text-primary">{fmt(calcResult.suggestedRetail)}</strong></p>
-                <p>Giá thùng đề xuất: <strong className="text-on-surface">{fmt(calcResult.suggestedBulk)}</strong></p>
               </div>
               <button
                 type="button"
@@ -591,9 +554,6 @@ function CalcModal({
             <div className="space-y-4">
               <FieldWrap label="Giá lẻ áp dụng (₫)">
                 <input type="number" min={0} value={applyRetail} onChange={(e) => setApplyRetail(Number(e.target.value))} className={inputCls} />
-              </FieldWrap>
-              <FieldWrap label="Giá thùng áp dụng (₫)">
-                <input type="number" min={0} value={applyBulk} onChange={(e) => setApplyBulk(Number(e.target.value))} className={inputCls} />
               </FieldWrap>
             </div>
             <div className="flex gap-3 justify-end">

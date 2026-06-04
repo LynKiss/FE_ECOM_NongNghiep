@@ -43,6 +43,8 @@ type Paginated<T> = { items: T[]; meta?: Meta };
 const statusOptions = [
   { value: 'all', label: 'Tất cả trạng thái' },
   { value: 'visible', label: 'Đang hiển thị' },
+  { value: 'published', label: 'Đang hiển thị' },
+  { value: 'pending', label: 'Chờ duyệt' },
   { value: 'hidden', label: 'Đã ẩn' },
   { value: 'deleted', label: 'Đã xóa' },
 ];
@@ -71,12 +73,23 @@ function normalizePayload<T>(payload: T[] | Paginated<T>, page: number, limit: n
   if (Array.isArray(payload)) {
     return {
       items: payload,
-      meta: { page, limit, total: payload.length, totalPages: Math.max(1, Math.ceil(payload.length / limit)) },
+      meta: {
+        page,
+        limit,
+        total: payload.length,
+        totalPages: Math.max(1, Math.ceil(payload.length / limit)),
+      },
     };
   }
+
   return {
     items: payload.items ?? [],
-    meta: payload.meta ?? { page, limit, total: payload.items?.length ?? 0, totalPages: 1 },
+    meta: payload.meta ?? {
+      page,
+      limit,
+      total: payload.items?.length ?? 0,
+      totalPages: 1,
+    },
   };
 }
 
@@ -84,6 +97,7 @@ function StatusBadge({ status }: { status?: string }) {
   const normalized = status ?? 'visible';
   const isBad = normalized === 'deleted';
   const isPending = normalized === 'pending' || normalized === 'hidden';
+
   return (
     <span
       className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ${
@@ -100,10 +114,12 @@ function StatusBadge({ status }: { status?: string }) {
 }
 
 function ImageStrip({ imageUrls }: { imageUrls?: string[] }) {
-  if (!imageUrls?.length) return null;
+  const images = Array.isArray(imageUrls) ? imageUrls.filter(Boolean) : [];
+  if (!images.length) return null;
+
   return (
     <div className="mt-3 flex flex-wrap gap-2">
-      {imageUrls.slice(0, 5).map((url, index) => (
+      {images.slice(0, 5).map((url, index) => (
         <a
           key={`${url}-${index}`}
           href={url}
@@ -112,12 +128,17 @@ function ImageStrip({ imageUrls }: { imageUrls?: string[] }) {
           className="h-16 w-16 overflow-hidden rounded-xl border border-black/10 bg-[#f2f0eb]"
           title="Mở ảnh"
         >
-          <img src={url} alt={`Ảnh đính kèm ${index + 1}`} className="h-full w-full object-cover" loading="lazy" />
+          <img
+            src={url}
+            alt={`Ảnh đính kèm ${index + 1}`}
+            className="h-full w-full object-cover"
+            loading="lazy"
+          />
         </a>
       ))}
-      {imageUrls.length > 5 ? (
+      {images.length > 5 ? (
         <span className="flex h-16 w-16 items-center justify-center rounded-xl bg-[#f2f0eb] text-xs font-black text-gray-500">
-          +{imageUrls.length - 5}
+          +{images.length - 5}
         </span>
       ) : null}
     </div>
@@ -142,6 +163,7 @@ export default function MyActivity() {
   const load = useCallback(() => {
     setLoading(true);
     setError(null);
+
     const reviewParams = new URLSearchParams({ page: String(reviewPage), limit: String(limit) });
     const commentParams = new URLSearchParams({ page: String(commentPage), limit: String(limit) });
     if (search.trim()) {
@@ -152,7 +174,8 @@ export default function MyActivity() {
       reviewParams.set('status', status);
       commentParams.set('status', status);
     }
-    Promise.all([
+
+    void Promise.all([
       clientApi.get<Review[] | Paginated<Review>>(`/reviews/me?${reviewParams.toString()}`),
       clientApi.get<NewsComment[] | Paginated<NewsComment>>(`/news/public/comments/me?${commentParams.toString()}`),
     ])
@@ -164,7 +187,9 @@ export default function MyActivity() {
         setComments(normalizedComments.items);
         setCommentMeta(normalizedComments.meta);
       })
-      .catch((err) => setError(err instanceof Error ? err.message : 'Không tải được hoạt động cá nhân.'))
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : 'Không tải được hoạt động cá nhân.');
+      })
       .finally(() => setLoading(false));
   }, [commentPage, limit, reviewPage, search, status]);
 
@@ -231,6 +256,7 @@ export default function MyActivity() {
               Tìm kiếm
             </button>
           </div>
+
           <div className="grid rounded-xl bg-[#f8f6f1] p-1 sm:grid-cols-2">
             <button type="button" onClick={() => setActiveTab('reviews')} className={`rounded-lg px-4 py-2.5 text-sm font-black transition ${activeTab === 'reviews' ? 'bg-[#006241] text-white shadow-sm' : 'text-[#1E3932] hover:bg-white'}`}>
               Đánh giá sản phẩm ({reviewMeta.total})

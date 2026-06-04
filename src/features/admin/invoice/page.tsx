@@ -319,7 +319,9 @@ export default function InvoicePrintPage() {
                     <td className="border border-slate-300 px-3 py-2">
                       <p className="font-semibold">{item.productName}</p>
                       <p className="text-[11px] text-slate-500">Mã SP: {item.productId}</p>
-                      {item.quantityDelivered !== undefined && item.quantityDelivered < item.quantity ? (
+                      {(order.status === 'partial_delivered' || order.status === 'partial_returned') &&
+                      item.quantityDelivered !== undefined &&
+                      item.quantityDelivered < item.quantity ? (
                         <p className="mt-1 text-[11px] font-bold text-amber-700">
                           Đã giao {item.quantityDelivered}/{item.quantity}
                         </p>
@@ -361,6 +363,16 @@ export default function InvoicePrintPage() {
           <p>
             <b>Số tiền bằng chữ:</b> <span className="italic">{amountInWords(totals.total)}</span>
           </p>
+          {order.paymentMethod === 'credit' ? (
+            <p className="mt-2 text-amber-700">
+              <b>Lưu ý công nợ:</b> Đơn mua nợ — số tiền {formatMoney(totals.total)} được ghi nhận vào hạn mức công nợ khách sỉ, thu hồi theo kỳ thanh toán.
+            </p>
+          ) : null}
+          {(order.status === 'partial_returned' || order.status === 'returned') ? (
+            <p className="mt-2 text-rose-700">
+              <b>Lưu ý trả hàng:</b> Đơn có phát sinh trả hàng/hoàn tiền. Vui lòng đối chiếu phiếu trả hàng để biết số tiền hoàn chính xác.
+            </p>
+          ) : null}
           {order.note ? (
             <p className="mt-2">
               <b>Ghi chú đơn hàng:</b> {order.note}

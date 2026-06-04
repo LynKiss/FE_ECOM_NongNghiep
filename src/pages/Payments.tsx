@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { useToast } from '../hooks/useToast';
+import Modal from '../components/shared/Modal';
 import {
   AdminCommerceSettings,
   DEFAULT_PAYMENT_SETTINGS,
@@ -247,6 +248,20 @@ const REFUND_REASON_LABEL: Record<RefundReason, string> = {
   manual_adjustment: 'Điều chỉnh thủ công',
 };
 
+const REFUND_STATUS_UI: Record<RefundStatus, { label: string; cls: string }> = {
+  pending: { label: 'Chờ xử lý', cls: 'bg-amber-100 text-amber-700' },
+  approved: { label: 'Đã duyệt', cls: 'bg-sky-100 text-sky-700' },
+  completed: { label: 'Đã hoàn', cls: 'bg-emerald-100 text-emerald-700' },
+  failed: { label: 'Thất bại', cls: 'bg-red-100 text-red-700' },
+};
+
+const REFUND_REASON_UI: Record<RefundReason, string> = {
+  return: 'Trả hàng',
+  cancel_paid_order: 'Hủy đơn đã thu tiền',
+  short_delivery: 'Giao thiếu',
+  manual_adjustment: 'Điều chỉnh thủ công',
+};
+
 function formatVND(amount: string | number) {
   return new Intl.NumberFormat('vi-VN', {
     style: 'currency',
@@ -328,6 +343,13 @@ export default function Payments() {
   const [refundLoading, setRefundLoading] = useState(false);
   const [refundReloadKey, setRefundReloadKey] = useState(0);
   const [refundActionId, setRefundActionId] = useState<string | null>(null);
+  const [selectedRefund, setSelectedRefund] = useState<RefundItem | null>(null);
+  const [refundStatusAction, setRefundStatusAction] = useState<{
+    refund: RefundItem;
+    status: Extract<RefundStatus, 'completed' | 'failed'>;
+  } | null>(null);
+  const [refundManualReference, setRefundManualReference] = useState('');
+  const [refundActionNote, setRefundActionNote] = useState('');
 
   const [search, setSearch] = useState(searchParams.get('search') ?? '');
   const [filterProvider, setFilterProvider] = useState(
@@ -581,6 +603,32 @@ export default function Payments() {
     .filter((item) => item.transactionStatus === 'success')
     .reduce((sum, item) => sum + Number(item.amount), 0);
 
+  const refundSummary = useMemo(() => {
+    const summary = {
+      pending: 0,
+      approved: 0,
+      completed: 0,
+      failed: 0,
+      actionableAmount: 0,
+      completedAmount: 0,
+      pageAmount: 0,
+    };
+
+    for (const refund of refundItems) {
+      const amount = Number(refund.amount) || 0;
+      summary[refund.refundStatus] += 1;
+      summary.pageAmount += amount;
+      if (refund.refundStatus === 'pending' || refund.refundStatus === 'approved') {
+        summary.actionableAmount += amount;
+      }
+      if (refund.refundStatus === 'completed') {
+        summary.completedAmount += amount;
+      }
+    }
+
+    return summary;
+  }, [refundItems]);
+
   const handleToggle = (key: PaymentMethodKey) => {
     setConfig((current) => ({
       ...current,
@@ -669,37 +717,22 @@ export default function Payments() {
     }
   };
 
-  const handleRefundStatus = async (
+  const submitRefundStatus = async (
     refund: RefundItem,
     status: RefundStatus,
+    payload: { manualReference?: string; note?: string } = {},
   ) => {
-    let manualReference: string | undefined;
-    let note: string | undefined;
-    if (status === 'completed') {
-      manualReference =
-        window.prompt(
-          'Nhập mã chứng từ hoặc tham chiếu hoàn tiền thủ công:',
-          refund.manualReference ?? '',
-        )?.trim() || undefined;
-      if (!manualReference) {
-        showToast({ tone: 'warning', title: 'Cần mã chứng từ hoàn tiền' });
-        return;
-      }
-    }
-    if (status === 'failed') {
-      note =
-        window.prompt('Ghi chú lý do hoàn tiền thất bại:', refund.note ?? '')
-          ?.trim() || undefined;
-    }
-
     setRefundActionId(refund.refundId);
     try {
       await apiClient.patch(`/payments/admin/refunds/${refund.refundId}/status`, {
         status,
-        manualReference,
-        note,
+        manualReference: payload.manualReference,
+        note: payload.note,
       });
       setRefundReloadKey((current) => current + 1);
+      setSelectedRefund((current) =>
+        current?.refundId === refund.refundId ? null : current,
+      );
       showToast({
         tone: 'success',
         title:
@@ -718,6 +751,50 @@ export default function Payments() {
     } finally {
       setRefundActionId(null);
     }
+  };
+
+  const openRefundAction = (
+    refund: RefundItem,
+    status: Extract<RefundStatus, 'completed' | 'failed'>,
+  ) => {
+    setRefundStatusAction({ refund, status });
+    setRefundManualReference(refund.manualReference ?? '');
+    setRefundActionNote(refund.note ?? '');
+  };
+
+  const closeRefundAction = () => {
+    if (refundActionId) return;
+    setRefundStatusAction(null);
+    setRefundManualReference('');
+    setRefundActionNote('');
+  };
+
+  const submitRefundAction = async () => {
+    if (!refundStatusAction) return;
+
+    if (refundStatusAction.status === 'completed' && !refundManualReference.trim()) {
+      showToast({
+        tone: 'warning',
+        title: 'Cần mã chứng từ hoàn tiền',
+        description: 'Hoàn tiền thủ công phải có mã tham chiếu để đối soát.',
+      });
+      return;
+    }
+
+    if (refundStatusAction.status === 'failed' && !refundActionNote.trim()) {
+      showToast({
+        tone: 'warning',
+        title: 'Cần ghi chú lý do thất bại',
+        description: 'Vui lòng nhập lý do để kế toán hoặc CSKH kiểm tra lại.',
+      });
+      return;
+    }
+
+    await submitRefundStatus(refundStatusAction.refund, refundStatusAction.status, {
+      manualReference: refundManualReference.trim() || undefined,
+      note: refundActionNote.trim() || undefined,
+    });
+    closeRefundAction();
   };
 
   return (
@@ -1069,6 +1146,39 @@ export default function Payments() {
 
       {activeTab === 'refunds' && (
         <>
+          <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
+            {[
+              { label: 'Tổng hàng đợi', value: refundMeta.total, icon: ClipboardList, color: 'text-primary' },
+              { label: 'Chờ xử lý', value: refundSummary.pending, icon: AlertCircle, color: 'text-amber-600' },
+              { label: 'Đã duyệt', value: refundSummary.approved, icon: CheckCircle2, color: 'text-sky-600' },
+              { label: 'Đã hoàn', value: refundSummary.completed, icon: FileText, color: 'text-emerald-600' },
+              { label: 'Cần xử lý', value: formatVND(refundSummary.actionableAmount), icon: CreditCard, color: 'text-red-600' },
+            ].map((stat) => {
+              const Icon = stat.icon;
+              return (
+                <div key={stat.label} className="rounded-2xl border border-on-surface/8 bg-white p-4 shadow-sm">
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary/8 text-primary">
+                      <Icon size={18} />
+                    </span>
+                    <div>
+                      <p className={`text-xl font-black ${stat.color}`}>{stat.value}</p>
+                      <p className="text-xs text-on-surface-variant">{stat.label}</p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm leading-6 text-emerald-800">
+            <p className="font-black text-emerald-900">Hoàn tiền là hàng đợi xử lý thủ công</p>
+            <p className="mt-1">
+              Chỉ refund ở trạng thái <b>Đã hoàn</b> mới được xem là đã trả tiền cho khách và được trừ trong báo cáo.
+              Refund hủy đơn đã thanh toán sẽ được backend đóng đơn, hoàn tồn và ghi lịch sử khi chốt hoàn tất.
+            </p>
+          </div>
+
           <section className="rounded-xl border border-on-surface/8 bg-white p-5 shadow-sm">
             <div className="grid gap-3 md:grid-cols-[1fr_180px_210px_auto]">
               <input
@@ -1083,7 +1193,7 @@ export default function Payments() {
                 className="rounded-2xl border border-on-surface/10 bg-surface px-4 py-3 text-sm outline-none"
               >
                 <option value="">Tất cả trạng thái</option>
-                {Object.entries(REFUND_STATUS_CFG).map(([key, cfg]) => (
+                {Object.entries(REFUND_STATUS_UI).map(([key, cfg]) => (
                   <option key={key} value={key}>{cfg.label}</option>
                 ))}
               </select>
@@ -1093,7 +1203,7 @@ export default function Payments() {
                 className="rounded-2xl border border-on-surface/10 bg-surface px-4 py-3 text-sm outline-none"
               >
                 <option value="">Tất cả lý do</option>
-                {Object.entries(REFUND_REASON_LABEL).map(([key, label]) => (
+                {Object.entries(REFUND_REASON_UI).map(([key, label]) => (
                   <option key={key} value={key}>{label}</option>
                 ))}
               </select>
@@ -1131,7 +1241,7 @@ export default function Payments() {
                     <tr><td colSpan={8} className="px-4 py-16 text-center text-on-surface-variant">Chưa có hoàn tiền cần hiển thị.</td></tr>
                   ) : (
                     refundItems.map((refund) => {
-                      const status = REFUND_STATUS_CFG[refund.refundStatus];
+                      const status = REFUND_STATUS_UI[refund.refundStatus];
                       const busy = refundActionId === refund.refundId;
                       return (
                         <tr key={refund.refundId} className="align-top hover:bg-surface/40">
@@ -1143,7 +1253,7 @@ export default function Payments() {
                             <p className="font-semibold">{refund.order?.fullName ?? refund.user?.username ?? '-'}</p>
                             <p className="text-xs text-on-surface-variant">{refund.order?.phone ?? refund.user?.email ?? '-'}</p>
                           </td>
-                          <td className="px-4 py-3">{REFUND_REASON_LABEL[refund.reason]}</td>
+                          <td className="px-4 py-3">{REFUND_REASON_UI[refund.reason]}</td>
                           <td className="px-4 py-3 font-bold">{formatVND(refund.amount)}</td>
                           <td className="px-4 py-3">
                             <p className="font-mono text-xs">{refund.manualReference ?? '-'}</p>
@@ -1155,13 +1265,20 @@ export default function Payments() {
                           <td className="whitespace-nowrap px-4 py-3 text-xs text-on-surface-variant">{dateFormatter.format(new Date(refund.createdAt))}</td>
                           <td className="px-4 py-3">
                             <div className="flex justify-end gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedRefund(refund)}
+                                className="rounded-xl border border-on-surface/10 px-3 py-1.5 text-xs font-bold text-primary transition hover:border-primary/30"
+                              >
+                                Chi tiết
+                              </button>
                               {refund.refundStatus === 'pending' ? (
-                                <button type="button" onClick={() => void handleRefundStatus(refund, 'approved')} disabled={busy} className="rounded-xl border border-sky-200 px-3 py-1.5 text-xs font-bold text-sky-700 disabled:opacity-50">Duyệt</button>
+                                <button type="button" onClick={() => void submitRefundStatus(refund, 'approved')} disabled={busy} className="rounded-xl border border-sky-200 px-3 py-1.5 text-xs font-bold text-sky-700 disabled:opacity-50">Duyệt</button>
                               ) : null}
                               {refund.refundStatus === 'pending' || refund.refundStatus === 'approved' ? (
                                 <>
-                                  <button type="button" onClick={() => void handleRefundStatus(refund, 'completed')} disabled={busy} className="rounded-xl bg-primary px-3 py-1.5 text-xs font-bold text-white disabled:opacity-50">Hoàn tất</button>
-                                  <button type="button" onClick={() => void handleRefundStatus(refund, 'failed')} disabled={busy} className="rounded-xl border border-red-200 px-3 py-1.5 text-xs font-bold text-red-600 disabled:opacity-50">Thất bại</button>
+                                  <button type="button" onClick={() => openRefundAction(refund, 'completed')} disabled={busy} className="rounded-xl bg-primary px-3 py-1.5 text-xs font-bold text-white disabled:opacity-50">Hoàn tất</button>
+                                  <button type="button" onClick={() => openRefundAction(refund, 'failed')} disabled={busy} className="rounded-xl border border-red-200 px-3 py-1.5 text-xs font-bold text-red-600 disabled:opacity-50">Thất bại</button>
                                 </>
                               ) : null}
                             </div>
@@ -1422,6 +1539,178 @@ export default function Payments() {
           </section>
         </>
       )}
+
+      <Modal
+        open={Boolean(selectedRefund)}
+        title="Chi tiết hoàn tiền"
+        description="Kiểm tra refund, đơn hàng, khách hàng và chứng từ trước khi cập nhật trạng thái."
+        onClose={() => setSelectedRefund(null)}
+        size="lg"
+        footer={
+          selectedRefund ? (
+            <>
+              <button
+                type="button"
+                onClick={() => setSelectedRefund(null)}
+                className="rounded-2xl border border-on-surface/10 px-5 py-2.5 text-sm font-bold text-on-surface-variant transition hover:border-primary/30 hover:text-primary"
+              >
+                Đóng
+              </button>
+              {selectedRefund.refundStatus === 'pending' ? (
+                <button
+                  type="button"
+                  onClick={() => void submitRefundStatus(selectedRefund, 'approved')}
+                  disabled={refundActionId === selectedRefund.refundId}
+                  className="rounded-2xl border border-sky-200 px-5 py-2.5 text-sm font-bold text-sky-700 transition hover:bg-sky-50 disabled:opacity-50"
+                >
+                  Duyệt
+                </button>
+              ) : null}
+              {selectedRefund.refundStatus === 'pending' || selectedRefund.refundStatus === 'approved' ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => openRefundAction(selectedRefund, 'failed')}
+                    disabled={refundActionId === selectedRefund.refundId}
+                    className="rounded-2xl border border-red-200 px-5 py-2.5 text-sm font-bold text-red-600 transition hover:bg-red-50 disabled:opacity-50"
+                  >
+                    Thất bại
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openRefundAction(selectedRefund, 'completed')}
+                    disabled={refundActionId === selectedRefund.refundId}
+                    className="rounded-2xl bg-primary px-5 py-2.5 text-sm font-bold text-white transition hover:bg-primary/90 disabled:opacity-50"
+                  >
+                    Hoàn tất
+                  </button>
+                </>
+              ) : null}
+            </>
+          ) : null
+        }
+      >
+        {selectedRefund ? (
+          <div className="space-y-5">
+            <div className="grid gap-3 md:grid-cols-2">
+              {[
+                ['Mã refund', `#${selectedRefund.refundId}`],
+                ['Mã đơn', `#${selectedRefund.orderId.slice(-8).toUpperCase()}`],
+                ['Khách hàng', selectedRefund.order?.fullName ?? selectedRefund.user?.username ?? '-'],
+                ['Số điện thoại / Email', selectedRefund.order?.phone ?? selectedRefund.user?.email ?? '-'],
+                ['Phương thức thanh toán', selectedRefund.order?.paymentMethod ?? selectedRefund.paymentProvider ?? '-'],
+                ['Trạng thái thanh toán', selectedRefund.order?.paymentStatus ?? '-'],
+                ['Lý do hoàn', REFUND_REASON_UI[selectedRefund.reason]],
+                ['Số tiền', formatVND(selectedRefund.amount)],
+                ['Chứng từ', selectedRefund.manualReference ?? 'Chưa có'],
+                ['Ngày tạo', dateFormatter.format(new Date(selectedRefund.createdAt))],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-2xl bg-surface px-4 py-3">
+                  <p className="text-[11px] font-black uppercase tracking-[0.16em] text-on-surface-variant/60">{label}</p>
+                  <p className="mt-1 font-bold text-on-surface">{value}</p>
+                </div>
+              ))}
+            </div>
+            {selectedRefund.note ? (
+              <div className="rounded-2xl border border-on-surface/8 bg-white px-4 py-3">
+                <p className="text-[11px] font-black uppercase tracking-[0.16em] text-on-surface-variant/60">Ghi chú</p>
+                <p className="mt-2 text-sm leading-6 text-on-surface-variant">{selectedRefund.note}</p>
+              </div>
+            ) : null}
+            <div className="rounded-2xl border border-on-surface/8 bg-white p-4">
+              <p className="font-black text-on-surface">Timeline xử lý</p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-4">
+                {(['pending', 'approved', 'completed', 'failed'] as RefundStatus[]).map((statusKey) => {
+                  const cfg = REFUND_STATUS_UI[statusKey];
+                  const active = selectedRefund.refundStatus === statusKey;
+                  return (
+                    <div
+                      key={statusKey}
+                      className={`rounded-2xl border px-3 py-2 text-center text-xs font-bold ${
+                        active ? `${cfg.cls} border-transparent` : 'border-on-surface/8 text-on-surface-variant'
+                      }`}
+                    >
+                      {cfg.label}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
+
+      <Modal
+        open={Boolean(refundStatusAction)}
+        title={refundStatusAction?.status === 'completed' ? 'Chốt hoàn tiền' : 'Đánh dấu hoàn tiền thất bại'}
+        description={
+          refundStatusAction?.status === 'completed'
+            ? 'Nhập mã chứng từ hoặc mã tham chiếu chuyển khoản để phục vụ đối soát.'
+            : 'Ghi rõ lý do thất bại để kế toán hoặc CSKH xử lý lại.'
+        }
+        onClose={closeRefundAction}
+        size="md"
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={closeRefundAction}
+              disabled={Boolean(refundActionId)}
+              className="rounded-2xl border border-on-surface/10 px-5 py-2.5 text-sm font-bold text-on-surface-variant transition hover:border-primary/30 hover:text-primary disabled:opacity-50"
+            >
+              Hủy
+            </button>
+            <button
+              type="button"
+              onClick={() => void submitRefundAction()}
+              disabled={Boolean(refundActionId)}
+              className={`rounded-2xl px-5 py-2.5 text-sm font-bold text-white transition disabled:opacity-50 ${
+                refundStatusAction?.status === 'failed' ? 'bg-red-600 hover:bg-red-700' : 'bg-primary hover:bg-primary/90'
+              }`}
+            >
+              {refundActionId ? 'Đang xử lý...' : refundStatusAction?.status === 'failed' ? 'Xác nhận thất bại' : 'Chốt hoàn tiền'}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          {refundStatusAction ? (
+            <div className="rounded-2xl bg-surface px-4 py-3 text-sm">
+              <p className="font-bold text-on-surface">
+                Đơn #{refundStatusAction.refund.orderId.slice(-8).toUpperCase()} · {formatVND(refundStatusAction.refund.amount)}
+              </p>
+              <p className="mt-1 text-on-surface-variant">
+                {REFUND_REASON_UI[refundStatusAction.refund.reason]}
+              </p>
+            </div>
+          ) : null}
+          {refundStatusAction?.status === 'completed' ? (
+            <div>
+              <label className="mb-1.5 block text-xs font-black uppercase tracking-[0.16em] text-on-surface-variant/60">
+                Mã chứng từ / tham chiếu
+              </label>
+              <input
+                value={refundManualReference}
+                onChange={(event) => setRefundManualReference(event.target.value)}
+                placeholder="VD: UNC-20260601-001"
+                className="w-full rounded-2xl border border-on-surface/10 bg-surface px-4 py-3 text-sm outline-none focus:border-primary/40"
+              />
+            </div>
+          ) : null}
+          <div>
+            <label className="mb-1.5 block text-xs font-black uppercase tracking-[0.16em] text-on-surface-variant/60">
+              Ghi chú
+            </label>
+            <textarea
+              value={refundActionNote}
+              onChange={(event) => setRefundActionNote(event.target.value)}
+              rows={4}
+              placeholder={refundStatusAction?.status === 'failed' ? 'Nhập lý do hoàn tiền thất bại...' : 'Ghi chú nội bộ nếu có...'}
+              className="w-full resize-none rounded-2xl border border-on-surface/10 bg-surface px-4 py-3 text-sm outline-none focus:border-primary/40"
+            />
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

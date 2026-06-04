@@ -17,6 +17,11 @@ interface AgingDebtItem {
   supplierId: string;
   supplierName?: string | null;
   supplierCode?: string | null;
+  supplierCreditLimit?: number;
+  supplierCurrentDebt?: number;
+  supplierAvailableCredit?: number | null;
+  supplierDebtUsagePct?: number;
+  supplierCreditStatus?: 'normal' | 'near_limit' | 'over_limit';
   orderDate: string | null;
   expectedDate?: string | null;
   paidDate?: string | null;
@@ -40,6 +45,10 @@ interface AgingSummary {
   totalPos: number;
   totalOutstanding: number;
   totalPaid?: number;
+  totalSupplierCreditLimit?: number;
+  totalSupplierCurrentDebt?: number;
+  nearLimitSupplierCount?: number;
+  overLimitSupplierCount?: number;
   unpaidCount?: number;
   partialCount?: number;
   paidCount?: number;
@@ -283,7 +292,7 @@ export default function AgingDebtPage() {
       </div>
 
       {summary && (
-        <div className="grid gap-3 md:grid-cols-4">
+        <div className="grid gap-3 md:grid-cols-5">
           <div className="rounded-2xl border border-outline-variant bg-surface p-4">
             <p className="text-xs font-bold uppercase tracking-wide text-on-surface-variant">Tổng PO</p>
             <p className="mt-1 text-2xl font-black">{summary.totalPos}</p>
@@ -296,6 +305,11 @@ export default function AgingDebtPage() {
           <div className="rounded-2xl border border-green-200 bg-green-50 p-4">
             <p className="text-xs font-bold uppercase tracking-wide text-green-700">Đã thanh toán</p>
             <p className="mt-1 text-2xl font-black text-green-800">{fmt(summary.totalPaid ?? 0)}</p>
+          </div>
+          <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
+            <p className="text-xs font-bold uppercase tracking-wide text-blue-700">Hạn mức NCC</p>
+            <p className="mt-1 text-2xl font-black text-blue-800">{fmt(summary.totalSupplierCreditLimit ?? 0)}</p>
+            <p className="mt-1 text-xs text-blue-700">{summary.nearLimitSupplierCount ?? 0} gần hạn · {summary.overLimitSupplierCount ?? 0} vượt hạn</p>
           </div>
           <div className="rounded-2xl border border-outline-variant bg-surface p-4">
             <p className="text-xs font-bold uppercase tracking-wide text-on-surface-variant">Nguồn số liệu</p>

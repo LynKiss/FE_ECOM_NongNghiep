@@ -105,12 +105,14 @@ export default function ClientLayout() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [categoryTree, setCategoryTree] = useState<CategoryTree[]>([]);
   const [megaMenuOpen, setMegaMenuOpen] = useState(false);
+  const [megaMenuTop, setMegaMenuTop] = useState(0);
   const [brand, setBrand] = useState<BrandConfig>(loadBrandConfig);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const megaMenuCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const megaTriggerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     void clientApi
@@ -252,6 +254,9 @@ export default function ClientLayout() {
 
   const handleMegaMenuEnter = () => {
     if (megaMenuCloseTimer.current) clearTimeout(megaMenuCloseTimer.current);
+    // Đo vị trí đáy của nút "Danh mục" để đặt menu (fixed) ngay dưới, căn giữa viewport.
+    const rect = megaTriggerRef.current?.getBoundingClientRect();
+    if (rect) setMegaMenuTop(rect.bottom + 10);
     setMegaMenuOpen(true);
   };
 
@@ -276,6 +281,7 @@ export default function ClientLayout() {
   ];
 
   const colCount = Math.min(categoryTree.length + 1, 5);
+  const megaMenuWidth = Math.min(colCount * 230 + 280, 1280);
 
   return (
     <div className="client-surface flex min-h-screen flex-col">
@@ -340,6 +346,7 @@ export default function ClientLayout() {
 
             {/* Sản phẩm — Mega menu */}
             <div
+              ref={megaTriggerRef}
               className="relative"
               onMouseEnter={handleMegaMenuEnter}
               onMouseLeave={handleMegaMenuLeave}
@@ -363,37 +370,31 @@ export default function ClientLayout() {
               {/* Mega menu dropdown */}
               {megaMenuOpen && (
                 <div
-                  className="absolute left-1/2 top-full z-50 mt-3 -translate-x-1/2 overflow-hidden rounded-3xl border border-black/5 bg-white shadow-[0_24px_60px_-12px_rgba(0,52,32,0.25),0_8px_20px_-6px_rgba(0,52,32,0.1)]"
-                  style={{ width: `${colCount * 200 + 260}px`, minWidth: '720px', maxWidth: '1120px' }}
+                  className="fixed left-1/2 z-50 -translate-x-1/2 overflow-hidden rounded-3xl border border-black/5 bg-white shadow-[0_24px_60px_-12px_rgba(0,52,32,0.25),0_8px_20px_-6px_rgba(0,52,32,0.1)]"
+                  style={{ top: `${megaMenuTop}px`, width: `${megaMenuWidth}px`, minWidth: '820px', maxWidth: 'calc(100vw - 32px)' }}
                   onMouseEnter={handleMegaMenuEnter}
                   onMouseLeave={handleMegaMenuLeave}
                 >
                   {/* Top gradient accent */}
                   <div className="h-1 w-full bg-gradient-to-r from-[#006241] via-[#00a06a] to-[#006241]" />
 
-                  {/* Arrow pointer */}
-                  <div
-                    className="absolute left-1/2 top-0 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rotate-45 border-l border-t border-black/5 bg-white"
-                    aria-hidden
-                  />
-
                   <div className="flex">
                     {/* Categories grid */}
                     <div className="min-w-0 flex-1 p-8">
                       <div
-                        className="grid gap-x-8 gap-y-5"
-                        style={{ gridTemplateColumns: `repeat(${colCount}, minmax(0, 1fr))` }}
+                        className="grid gap-x-7 gap-y-5"
+                        style={{ gridTemplateColumns: `repeat(${colCount}, minmax(180px, 1fr))` }}
                       >
                         {/* Cột 0: Tất cả sản phẩm */}
                         <div className="min-w-0">
                           <Link
                             to="/client/products"
                             onClick={() => setMegaMenuOpen(false)}
-                            className="group/header mb-4 flex items-center gap-2 text-xs font-black uppercase tracking-[0.15em] text-[#006241] transition"
+                            className="group/header mb-3 flex min-h-[2.75rem] items-start gap-2 text-xs font-black uppercase leading-snug tracking-[0.15em] text-[#006241] transition"
                           >
-                            <Sparkles size={14} className="transition group-hover/header:rotate-12" />
-                            <span>Tất cả</span>
-                            <ArrowRight size={12} className="opacity-50 transition group-hover/header:translate-x-1 group-hover/header:opacity-100" />
+                            <Sparkles size={14} className="mt-0.5 shrink-0 transition group-hover/header:rotate-12" />
+                            <span className="min-w-0 flex-1">Tất cả</span>
+                            <ArrowRight size={12} className="mt-0.5 shrink-0 opacity-50 transition group-hover/header:translate-x-1 group-hover/header:opacity-100" />
                           </Link>
                           <div className="space-y-0.5 border-t border-black/5 pt-3">
                             {[
@@ -422,11 +423,11 @@ export default function ClientLayout() {
                             <Link
                               to={`/client/products?categoryId=${cat.categoryId}`}
                               onClick={() => setMegaMenuOpen(false)}
-                              className="group/header mb-4 flex items-center gap-2 text-xs font-black uppercase tracking-[0.15em] text-[#1E3932] transition hover:text-[#006241]"
+                              className="group/header mb-3 flex min-h-[2.75rem] items-start gap-2 text-xs font-black uppercase leading-snug tracking-[0.15em] text-[#1E3932] transition hover:text-[#006241]"
                             >
-                              <Sprout size={14} className="shrink-0 text-[#006241] transition group-hover/header:rotate-12" />
-                              <span className="truncate">{cat.categoryName}</span>
-                              <ArrowRight size={12} className="shrink-0 opacity-50 transition group-hover/header:translate-x-1 group-hover/header:opacity-100" />
+                              <Sprout size={14} className="mt-0.5 shrink-0 text-[#006241] transition group-hover/header:rotate-12" />
+                              <span className="min-w-0 flex-1 break-words">{cat.categoryName}</span>
+                              <ArrowRight size={12} className="mt-0.5 shrink-0 opacity-50 transition group-hover/header:translate-x-1 group-hover/header:opacity-100" />
                             </Link>
                             <div className="space-y-0.5 border-t border-black/5 pt-3">
                               {cat.children.slice(0, 7).map((child) => (
@@ -436,7 +437,7 @@ export default function ClientLayout() {
                                   onClick={() => setMegaMenuOpen(false)}
                                   className="group/link block rounded-xl px-3 py-2 text-[15px] font-medium text-gray-600 transition hover:bg-[#006241]/7 hover:text-[#006241]"
                                 >
-                                  <span className="truncate transition-transform group-hover/link:translate-x-0.5 inline-block">
+                                  <span className="inline-block break-words leading-snug transition-transform group-hover/link:translate-x-0.5">
                                     {child.categoryName}
                                   </span>
                                 </Link>

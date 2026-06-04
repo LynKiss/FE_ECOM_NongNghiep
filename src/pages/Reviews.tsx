@@ -17,6 +17,7 @@ import { apiClient } from '../lib/api';
 import { useLanguage } from '../i18n/language-context';
 import { useToast } from '../hooks/useToast';
 import Pagination from '../components/shared/Pagination';
+import { useConfirmDialog } from '../hooks/useConfirmDialog';
 
 type ReviewStatus = 'visible' | 'hidden' | 'deleted';
 
@@ -199,6 +200,7 @@ export default function Reviews() {
   const { language } = useLanguage();
   const isVietnamese = language === 'vi';
   const { showToast } = useToast();
+  const { confirm: askConfirm, ConfirmDialog } = useConfirmDialog();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [reviews, setReviews] = useState<ReviewItem[]>([]);
@@ -308,7 +310,13 @@ export default function Reviews() {
   }
 
   async function handleDelete(commentId: string) {
-    if (!window.confirm('Xóa đánh giá này?')) return;
+    const ok = await askConfirm({
+      title: 'Xóa đánh giá?',
+      description: 'Đánh giá sẽ bị xóa khỏi trang sản phẩm và nhật ký đánh giá.',
+      tone: 'danger',
+      confirmLabel: 'Xóa',
+    });
+    if (!ok) return;
     try {
       await apiClient.delete(`/reviews/admin/${commentId}`);
       showToast({ tone: 'success', title: 'Đã xóa đánh giá' });
@@ -336,6 +344,7 @@ export default function Reviews() {
 
   return (
     <div className="space-y-6 pb-12">
+      {ConfirmDialog}
       {lightbox && (
         <Lightbox state={lightbox} onClose={closeLightbox} onPrev={lightboxPrev} onNext={lightboxNext} />
       )}

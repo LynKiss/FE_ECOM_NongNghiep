@@ -64,6 +64,17 @@ const defaultFormState: CategoryFormState = {
   isActive: true,
 };
 
+function getCategoryDescriptionPreview(value: string | null | undefined) {
+  if (!value) return '';
+
+  if (typeof window === 'undefined') {
+    return value.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+
+  const parsed = new DOMParser().parseFromString(value, 'text/html');
+  return (parsed.body.textContent ?? '').replace(/\s+/g, ' ').trim();
+}
+
 export default function Categories() {
   const { language } = useLanguage();
   const isVietnamese = language === 'vi';
@@ -1080,7 +1091,7 @@ function CategoryTreeRow({
                 <h3 className="truncate text-base font-black text-on-surface">{category.categoryName}</h3>
               </div>
               <p className="mt-2 text-xs text-on-surface-variant/70">
-                {category.categoryDescription || (isVietnamese ? 'Chưa có mô tả.' : 'No description yet.')}
+                {getCategoryDescriptionPreview(category.categoryDescription) || (isVietnamese ? 'Chưa có mô tả.' : 'No description yet.')}
               </p>
             </div>
           </div>

@@ -42,6 +42,7 @@ type RecommendedProductForm = {
 type DiseaseForm = {
   diseaseKey: string;
   diseaseName: string;
+  diseaseNameVi: string;
   diseaseSlug: string;
   summary: string;
   symptoms: string;
@@ -60,6 +61,7 @@ type DiseaseForm = {
 const emptyForm: DiseaseForm = {
   diseaseKey: '',
   diseaseName: '',
+  diseaseNameVi: '',
   diseaseSlug: '',
   summary: '',
   symptoms: '',
@@ -81,6 +83,31 @@ function toLineText(values: string[]) {
 
 function toStringArray(value: string) {
   return [...new Set(value.split(/\n|,/).map((item) => item.trim()).filter(Boolean))];
+}
+
+const RICE_DISEASE_VI_FALLBACK: Record<string, string> = {
+  BACTERIAL_LEAF_BLIGHT: 'Bạc lá do vi khuẩn',
+  BROWN_SPOT: 'Đốm nâu',
+  LEAF_BLAST: 'Đạo ôn lá',
+  LEAF_SCALD: 'Cháy lá',
+  NARROW_BROWN_SPOT: 'Đốm nâu hẹp',
+  SHEATH_BLIGHT: 'Khô vằn',
+  RICE_HISPA: 'Bọ gai hại lúa',
+  HEALTHY_RICE_LEAF: 'Lá lúa khỏe mạnh',
+};
+
+function normalizeDiseaseKey(value?: string | null) {
+  return (value ?? '').trim().toUpperCase().replace(/[\s-]+/g, '_');
+}
+
+function getDiseaseVietnameseName(
+  item: Pick<AdminRiceDisease, 'diseaseKey' | 'diseaseName' | 'diseaseNameVi'>,
+) {
+  return (
+    item.diseaseNameVi?.trim() ||
+    RICE_DISEASE_VI_FALLBACK[normalizeDiseaseKey(item.diseaseKey)] ||
+    item.diseaseName
+  );
 }
 
 export default function RiceDiagnosisAdmin() {
@@ -111,7 +138,9 @@ export default function RiceDiagnosisAdmin() {
       if (!search.trim()) return true;
 
       const keyword = search.trim().toLowerCase();
+      const vietnameseName = getDiseaseVietnameseName(item).toLowerCase();
       return (
+        vietnameseName.includes(keyword) ||
         item.diseaseName.toLowerCase().includes(keyword) ||
         item.diseaseKey.toLowerCase().includes(keyword) ||
         item.diseaseSlug.toLowerCase().includes(keyword)
@@ -199,6 +228,7 @@ export default function RiceDiagnosisAdmin() {
       setForm({
         diseaseKey: detail.diseaseKey,
         diseaseName: detail.diseaseName,
+        diseaseNameVi: detail.diseaseNameVi ?? getDiseaseVietnameseName(detail),
         diseaseSlug: detail.diseaseSlug,
         summary: detail.summary ?? '',
         symptoms: detail.symptoms ?? '',
@@ -295,6 +325,7 @@ export default function RiceDiagnosisAdmin() {
       const payload = {
         diseaseKey: form.diseaseKey.trim(),
         diseaseName: form.diseaseName.trim(),
+        diseaseNameVi: form.diseaseNameVi.trim() || undefined,
         diseaseSlug: form.diseaseSlug.trim() || undefined,
         summary: form.summary.trim() || undefined,
         symptoms: form.symptoms.trim() || undefined,
@@ -504,19 +535,28 @@ export default function RiceDiagnosisAdmin() {
             </div>
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              {filteredList.map((item) => (
-                <div
-                  key={item.diseaseId}
-                  className="flex flex-col rounded-xl border border-on-surface/8 bg-surface/40 p-5"
-                >
+              {filteredList.map((item) => {
+                const displayName = getDiseaseVietnameseName(item);
+                const hasVietnameseName = displayName !== item.diseaseName;
+
+                return (
+                  <div
+                    key={item.diseaseId}
+                    className="flex flex-col rounded-xl border border-on-surface/8 bg-surface/40 p-5"
+                  >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <Leaf size={15} className="shrink-0 text-primary" />
                         <p className="truncate text-base font-black text-on-surface">
-                          {item.diseaseName}
+                          {displayName}
                         </p>
                       </div>
+                      {hasVietnameseName ? (
+                        <p className="mt-1 truncate text-xs font-semibold text-on-surface-variant">
+                          Tên tiếng Anh: {item.diseaseName}
+                        </p>
+                      ) : null}
                       <p className="mt-1 truncate text-[11px] font-bold uppercase tracking-[0.14em] text-on-surface-variant/50">
                         {item.diseaseKey}
                       </p>
@@ -568,8 +608,9 @@ export default function RiceDiagnosisAdmin() {
                       {item.isActive ? 'Tạm ẩn' : 'Kích hoạt'}
                     </button>
                   </div>
-                </div>
-              ))}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -621,16 +662,30 @@ export default function RiceDiagnosisAdmin() {
                   </label>
                 </div>
 
-                <label className="space-y-1.5">
-                  <span className="text-xs font-black uppercase tracking-[0.14em] text-on-surface-variant/60">
-                    Tên bệnh
-                  </span>
-                  <input
-                    value={form.diseaseName}
-                    onChange={(event) => setForm((current) => ({ ...current, diseaseName: event.target.value }))}
-                    className="w-full rounded-xl border border-on-surface/10 bg-surface px-4 py-3 text-sm outline-none focus:border-primary/30 focus:ring-2 focus:ring-primary/10"
-                  />
-                </label>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <label className="space-y-1.5">
+                    <span className="text-xs font-black uppercase tracking-[0.14em] text-on-surface-variant/60">
+                      Tên tiếng Việt
+                    </span>
+                    <input
+                      value={form.diseaseNameVi}
+                      onChange={(event) => setForm((current) => ({ ...current, diseaseNameVi: event.target.value }))}
+                      placeholder="Ví dụ: Đạo ôn lá"
+                      className="w-full rounded-xl border border-on-surface/10 bg-surface px-4 py-3 text-sm outline-none focus:border-primary/30 focus:ring-2 focus:ring-primary/10"
+                    />
+                  </label>
+                  <label className="space-y-1.5">
+                    <span className="text-xs font-black uppercase tracking-[0.14em] text-on-surface-variant/60">
+                      Tên tiếng Anh
+                    </span>
+                    <input
+                      value={form.diseaseName}
+                      onChange={(event) => setForm((current) => ({ ...current, diseaseName: event.target.value }))}
+                      placeholder="Ví dụ: Leaf Blast"
+                      className="w-full rounded-xl border border-on-surface/10 bg-surface px-4 py-3 text-sm outline-none focus:border-primary/30 focus:ring-2 focus:ring-primary/10"
+                    />
+                  </label>
+                </div>
 
                 <div className="grid gap-4 md:grid-cols-3">
                   <label className="space-y-1.5">

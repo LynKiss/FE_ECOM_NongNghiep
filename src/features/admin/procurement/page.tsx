@@ -12,8 +12,17 @@ import { useToast } from '../../../hooks/useToast';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Supplier = { supplierId: string; name: string; code: string | null };
-type Product = { productId: string; productName: string; unit: string | null };
+type Supplier = {
+  supplierId: string;
+  name: string;
+  code: string | null;
+  creditLimit?: number;
+  currentDebt?: number;
+  availableCredit?: number | null;
+  debtUsagePct?: number;
+  creditStatus?: 'normal' | 'near_limit' | 'over_limit';
+};
+type Product = { productId: string; productName: string; unit: string | null; primaryImageUrl?: string | null };
 
 type PoStatus = 'draft' | 'ordered' | 'partial' | 'received' | 'cancelled';
 type GrStatus = 'draft' | 'confirmed' | 'cancelled';
@@ -34,6 +43,9 @@ type PoItem = {
 
 type GrItem = {
   productId: string;
+  productName?: string | null;
+  productCode?: string | null;
+  primaryImageUrl?: string | null;
   unit: string;
   unitPerBase: number;
   qtyOrdered: number;
@@ -48,6 +60,9 @@ type GrItem = {
 
 type SrItem = {
   productId: string;
+  productName?: string | null;
+  productCode?: string | null;
+  primaryImageUrl?: string | null;
   qtyReturned: number;
   unitPrice: number;
   hasRefund: boolean;
@@ -105,6 +120,16 @@ type GrCostPreviewItem = {
   allocatedExtraCost: number;
   landedCost: number;
   totalLandedCost: number;
+};
+
+type GrBatchForm = {
+  productId: string;
+  productName: string;
+  batchCode: string;
+  qty: number;
+  mfgDate: string;
+  expDate: string;
+  note: string;
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -189,6 +214,36 @@ function FieldWrap({ children, label }: { children: ReactNode; label: string }) 
       <LabelCls>{label}</LabelCls>
       {children}
     </label>
+  );
+}
+
+function ProcurementProductCell({
+  item,
+  products,
+}: {
+  item: { productId: string; productName?: string | null; productCode?: string | null; primaryImageUrl?: string | null };
+  products: Product[];
+}) {
+  const fallbackProduct = products.find((p) => p.productId === item.productId);
+  const productName = item.productName ?? fallbackProduct?.productName ?? item.productId;
+  const imageUrl = item.primaryImageUrl ?? fallbackProduct?.primaryImageUrl ?? null;
+
+  return (
+    <div className="flex min-w-[260px] items-center gap-3">
+      <div className="h-12 w-12 shrink-0 overflow-hidden rounded-xl border border-on-surface/8 bg-white">
+        {imageUrl ? (
+          <img src={imageUrl} alt={productName} className="h-full w-full object-contain p-1" />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center bg-emerald-50 text-xs font-black text-primary">
+            SP
+          </div>
+        )}
+      </div>
+      <div className="min-w-0">
+        <p className="line-clamp-2 font-bold text-on-surface">{productName}</p>
+        <p className="truncate text-xs text-on-surface-variant">{item.productCode ?? item.productId}</p>
+      </div>
+    </div>
   );
 }
 
@@ -331,6 +386,14 @@ function PoTab({
       showToast({ tone: 'error', title: 'Điền đầy đủ thông tin các dòng hàng' });
       return;
     }
+    if (isPoOverSupplierCredit) {
+      showToast({
+        tone: 'warning',
+        title: 'Vượt hạn mức công nợ NCC',
+        description: `PO đang vượt ${fmt(poCreditExceededBy)} so với phần còn khả dụng.`,
+      });
+      return;
+    }
     setSaving(true);
     try {
       await apiClient.post('/procurement/purchase-orders', {
@@ -371,6 +434,13 @@ function PoTab({
   }
 
   const totalAmount = lines.reduce((s, l) => s + l.qtyOrdered * l.unitPrice, 0);
+  const selectedSupplier = suppliers.find((supplier) => supplier.supplierId === supplierId);
+  const supplierCreditLimit = Number(selectedSupplier?.creditLimit ?? 0);
+  const supplierAvailableCredit = selectedSupplier?.availableCredit ?? null;
+  const isPoOverSupplierCredit =
+    Boolean(selectedSupplier && supplierCreditLimit > 0 && supplierAvailableCredit !== null && totalAmount > supplierAvailableCredit);
+  const poCreditExceededBy =
+    isPoOverSupplierCredit && supplierAvailableCredit !== null ? totalAmount - supplierAvailableCredit : 0;
 
   return (
     <>
@@ -659,6 +729,22 @@ function PoTab({
                     ))}
                   </select>
                 </FieldWrap>
+                {selectedSupplier && (
+                  <div className={`rounded-xl border p-3 text-sm ${
+                    isPoOverSupplierCredit ? 'border-red-200 bg-red-50 text-red-700' : 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                  }`}>
+                    <p className="font-black">Hạn mức công nợ NCC</p>
+                    <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                      <span>Hạn mức: <strong>{supplierCreditLimit > 0 ? fmt(supplierCreditLimit) : 'Chưa cài'}</strong></span>
+                      <span>Đang nợ: <strong>{fmt(selectedSupplier.currentDebt ?? 0)}</strong></span>
+                      <span>Còn lại: <strong>{supplierAvailableCredit === null ? 'Không giới hạn' : fmt(supplierAvailableCredit)}</strong></span>
+                      <span>PO này: <strong>{fmt(totalAmount)}</strong></span>
+                    </div>
+                    {isPoOverSupplierCredit && (
+                      <p className="mt-2 text-xs font-bold">Vượt hạn mức {fmt(poCreditExceededBy)}. Không thể tạo/đặt PO này.</p>
+                    )}
+                  </div>
+                )}
                 <div className="grid gap-3 sm:grid-cols-2">
                   <FieldWrap label="Ngày đặt">
                     <input type="date" value={orderDate} onChange={(e) => setOrderDate(e.target.value)} className={inputCls} />
@@ -756,7 +842,7 @@ function PoTab({
 
             <div className="sticky bottom-0 flex justify-end gap-3 border-t border-on-surface/8 bg-white px-6 py-4">
               <button type="button" onClick={() => setModalOpen(false)} className="rounded-xl border border-on-surface/10 px-5 py-2.5 text-sm font-bold hover:bg-on-surface/5">Đóng</button>
-              <button type="button" onClick={() => void handleSave()} disabled={saving} className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-black text-white shadow-lg shadow-primary/20 disabled:opacity-60">
+              <button type="button" onClick={() => void handleSave()} disabled={saving || isPoOverSupplierCredit} className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-black text-white shadow-lg shadow-primary/20 disabled:opacity-60">
                 {saving && <LoaderCircle size={15} className="animate-spin" />}
                 Lưu đơn
               </button>
@@ -794,6 +880,9 @@ function GrTab({
   const [previewing, setPreviewing] = useState(false);
   const previewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [availablePos, setAvailablePos] = useState<Po[]>([]);
+  const [confirmTarget, setConfirmTarget] = useState<(Gr & { items: GrItem[] }) | null>(null);
+  const [batchForms, setBatchForms] = useState<GrBatchForm[]>([]);
+  const [confirming, setConfirming] = useState(false);
 
   // Form
   const [supplierId, setSupplierId] = useState('');
@@ -824,6 +913,50 @@ function GrTab({
   function setLine(idx: number, patch: Partial<GrItem>) {
     setLines((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
     triggerPreview();
+  }
+
+  function getGrItemQtyGood(item: Pick<GrItem, 'qtyReceived' | 'qtyReturned'>) {
+    return Math.max(0, Number(item.qtyReceived ?? 0) - Number(item.qtyReturned ?? 0));
+  }
+
+  function buildBatchForms(gr: Gr & { items: GrItem[] }) {
+    return gr.items
+      .map((item) => {
+        const qty = getGrItemQtyGood(item);
+        const fallbackProduct = products.find((p) => p.productId === item.productId);
+        return {
+          productId: item.productId,
+          productName: item.productName ?? fallbackProduct?.productName ?? item.productId,
+          batchCode: `${gr.grCode}-${item.productId.slice(0, 6)}`,
+          qty,
+          mfgDate: '',
+          expDate: '',
+          note: '',
+        };
+      })
+      .filter((item) => item.qty > 0);
+  }
+
+  function setBatchForm(idx: number, patch: Partial<GrBatchForm>) {
+    setBatchForms((prev) => prev.map((item, i) => (i === idx ? { ...item, ...patch } : item)));
+  }
+
+  async function openConfirmModal(gr: Gr | (Gr & { items: GrItem[] })) {
+    try {
+      const fullGr =
+        'items' in gr && Array.isArray(gr.items)
+          ? (gr as Gr & { items: GrItem[] })
+          : await apiClient.get<Gr & { items: GrItem[] }>(`/procurement/goods-receipts/${gr.grId}`);
+      const forms = buildBatchForms(fullGr);
+      if (!forms.length) {
+        showToast({ tone: 'error', title: 'Không có số lượng hàng đạt để nhập kho' });
+        return;
+      }
+      setConfirmTarget(fullGr);
+      setBatchForms(forms);
+    } catch (err) {
+      showToast({ tone: 'error', title: 'Không tải được phiếu nhận hàng', description: err instanceof Error ? err.message : '' });
+    }
   }
 
   function triggerPreview() {
@@ -871,9 +1004,11 @@ function GrTab({
     setNotes('');
     setLines([emptyGrItem()]);
     setPreview([]);
+    // Lấy PO còn nhận được hàng: 'ordered' (chưa nhận) + 'partial' (đã nhận 1 phần, còn lại).
+    // BE chỉ lọc 1 status nên fetch tất cả rồi lọc client-side.
     void apiClient
-      .get<{ items: Po[] }>('/procurement/purchase-orders?limit=200&status=ordered')
-      .then((d) => setAvailablePos(d.items ?? []));
+      .get<{ items: Po[] }>('/procurement/purchase-orders?limit=200')
+      .then((d) => setAvailablePos((d.items ?? []).filter((p) => p.status === 'ordered' || p.status === 'partial')));
     setModalOpen(true);
   }
 
@@ -925,13 +1060,35 @@ function GrTab({
   }
 
   async function handleConfirm(id: string) {
+    if (batchForms.some((b) => !b.batchCode.trim())) {
+      showToast({ tone: 'error', title: 'Mỗi lô cần có mã lô' });
+      return;
+    }
+    setConfirming(true);
     try {
-      await apiClient.patch(`/procurement/goods-receipts/${id}/confirm`, {});
+      await apiClient.patch(`/procurement/goods-receipts/${id}/confirm`, {
+        itemBatches: batchForms.map((b) => ({
+          productId: b.productId,
+          batches: [
+            {
+              batchCode: b.batchCode.trim(),
+              qty: b.qty,
+              mfgDate: b.mfgDate || undefined,
+              expDate: b.expDate || undefined,
+              note: b.note.trim() || undefined,
+            },
+          ],
+        })),
+      });
       showToast({ tone: 'success', title: 'Đã xác nhận nhập kho' });
+      setConfirmTarget(null);
+      setBatchForms([]);
       setReloadKey((k) => k + 1);
       if (detailId === id) setDetailId(id);
     } catch (err) {
       showToast({ tone: 'error', title: 'Thất bại', description: err instanceof Error ? err.message : '' });
+    } finally {
+      setConfirming(false);
     }
   }
 
@@ -1019,7 +1176,7 @@ function GrTab({
                         </button>
                         {gr.status === 'draft' && (
                           <>
-                            <button type="button" onClick={() => void handleConfirm(gr.grId)}
+                            <button type="button" onClick={() => void openConfirmModal(gr)}
                               className="rounded-xl border border-emerald-200 px-3 py-1.5 text-xs font-bold text-emerald-700 hover:bg-emerald-50">
                               Xác nhận
                             </button>
@@ -1089,6 +1246,195 @@ function GrTab({
         )}
       </section>
 
+      {(detailId || detail) && (
+        <div className="fixed inset-0 z-50 flex justify-end bg-black/35">
+          <aside className="h-full w-full max-w-3xl overflow-y-auto bg-surface p-6 shadow-xl">
+            <div className="mb-5 flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-black text-on-surface">Chi tiết phiếu nhận hàng</h2>
+                <p className="text-sm text-on-surface-variant">{detail?.grCode ?? 'Đang tải...'}</p>
+              </div>
+              <button type="button" onClick={() => setDetailId(null)} className="rounded-lg p-2 hover:bg-surface-variant">
+                <X size={20} />
+              </button>
+            </div>
+
+            {!detail ? (
+              <div className="py-16 text-center text-on-surface-variant">Đang tải chi tiết...</div>
+            ) : (
+              <div className="space-y-4">
+                <div className="grid gap-3 rounded-2xl border border-outline-variant p-4 sm:grid-cols-2">
+                  <InfoLine label="Mã GR" value={detail.grCode} />
+                  <InfoLine label="Nhà cung cấp" value={suppliers.find((s) => s.supplierId === detail.supplierId)?.name ?? detail.supplierId} />
+                  <InfoLine label="PO liên kết" value={detail.poId ? (availablePos.find((p) => p.poId === detail.poId)?.poCode ?? `#${detail.poId.slice(0, 8).toUpperCase()}`) : 'Không liên kết'} />
+                  <InfoLine label="Trạng thái" value={GR_STATUS_LABEL[detail.status]} />
+                  <InfoLine label="Ngày nhận" value={new Date(detail.receiptDate).toLocaleDateString('vi-VN')} />
+                  <InfoLine label="Chi phí ngoài" value={fmt(Number(detail.shippingCost) + Number(detail.otherCost))} />
+                </div>
+
+                <div className="rounded-2xl border border-outline-variant p-4">
+                  <h3 className="mb-3 font-black text-on-surface">Dòng sản phẩm nhận hàng</h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[760px] text-sm">
+                      <thead className="text-on-surface-variant">
+                        <tr>
+                          <th className="pb-2 text-left">Sản phẩm</th>
+                          <th className="pb-2 text-right">SL đặt</th>
+                          <th className="pb-2 text-right">SL nhận</th>
+                          <th className="pb-2 text-right">SL lỗi</th>
+                          <th className="pb-2 text-right">SL trả NCC</th>
+                          <th className="pb-2 text-right">Đơn giá</th>
+                          <th className="pb-2 text-right">NCC hoàn</th>
+                          <th className="pb-2 text-right">Giá vốn/cái</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-outline-variant">
+                        {(detail.items as GrItem[]).map((item, idx) => (
+                          <tr key={`${item.productId}-${idx}`}>
+                            <td className="py-3 pr-4">
+                              <ProcurementProductCell item={item} products={products} />
+                            </td>
+                            <td className="py-3 text-right text-on-surface-variant">{item.qtyOrdered}</td>
+                            <td className="py-3 text-right font-semibold">{item.qtyReceived}</td>
+                            <td className="py-3 text-right text-amber-600">{item.qtyDefective}</td>
+                            <td className="py-3 text-right text-red-500">{item.qtyReturned}</td>
+                            <td className="py-3 text-right">{fmt(item.unitPrice)}</td>
+                            <td className="py-3 text-right">{item.hasRefund ? fmt(item.refundAmount) : '-'}</td>
+                            <td className="py-3 text-right font-black text-primary">{fmt((item as any).landedCost ?? 0)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div className="grid gap-3 rounded-2xl border border-outline-variant p-4 sm:grid-cols-3">
+                  <InfoLine label="Phí vận chuyển" value={fmt(detail.shippingCost)} />
+                  <InfoLine label="Chi phí khác" value={fmt(detail.otherCost)} />
+                  <InfoLine label="Tổng NCC hoàn" value={fmt((detail.items as GrItem[]).reduce((sum, item) => sum + (item.hasRefund ? Number(item.refundAmount ?? 0) : 0), 0))} strong />
+                </div>
+
+                {detail.notes ? (
+                  <div className="rounded-2xl border border-outline-variant p-4">
+                    <h3 className="mb-2 font-black text-on-surface">Ghi chú</h3>
+                    <p className="text-sm text-on-surface-variant">{detail.notes}</p>
+                  </div>
+                ) : null}
+
+                {detail.status === 'draft' && (
+                  <div className="flex flex-wrap justify-end gap-3">
+                    <button type="button" onClick={() => void handleCancel(detail.grId)} className="rounded-xl border border-red-200 px-4 py-2 text-sm font-bold text-red-600 hover:bg-red-50">
+                      Hủy phiếu
+                    </button>
+                    <button type="button" onClick={() => void openConfirmModal(detail as Gr & { items: GrItem[] })} className="rounded-xl bg-primary px-4 py-2 text-sm font-black text-white hover:bg-primary/90">
+                      Xác nhận nhập kho
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </aside>
+        </div>
+      )}
+
+      {confirmTarget && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-950/50 p-4 pt-10">
+          <div className="w-full max-w-4xl overflow-hidden rounded-xl bg-white shadow-sm">
+            <div className="flex items-center justify-between border-b border-on-surface/8 px-6 py-5">
+              <div>
+                <h2 className="text-xl font-black">Khai báo lô và hạn sử dụng</h2>
+                <p className="mt-1 text-sm text-on-surface-variant">
+                  Phiếu {confirmTarget.grCode} - nhập hạn riêng cho từng lô trước khi cộng kho.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmTarget(null);
+                  setBatchForms([]);
+                }}
+                className="flex h-9 w-9 items-center justify-center rounded-full border border-on-surface/10 hover:bg-on-surface/5"
+              >
+                <X size={17} />
+              </button>
+            </div>
+
+            <div className="max-h-[65vh] space-y-3 overflow-y-auto px-6 py-5">
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                Nếu không nhập hạn sử dụng, lô sẽ được lưu không có HSD. Khi bán, hệ thống ưu tiên lô có hạn gần nhất trước; lô không HSD được xếp sau.
+              </div>
+
+              {batchForms.map((batch, idx) => (
+                <div key={`${batch.productId}-${idx}`} className="rounded-xl border border-on-surface/8 bg-surface/50 p-4">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="font-black text-on-surface">{batch.productName}</p>
+                      <p className="text-xs text-on-surface-variant">Số lượng hàng đạt: {batch.qty.toLocaleString('vi-VN')}</p>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-4">
+                    <FieldWrap label="Mã lô *">
+                      <input
+                        value={batch.batchCode}
+                        onChange={(e) => setBatchForm(idx, { batchCode: e.target.value })}
+                        className={inputCls}
+                      />
+                    </FieldWrap>
+                    <FieldWrap label="Ngày sản xuất">
+                      <input
+                        type="date"
+                        value={batch.mfgDate}
+                        onChange={(e) => setBatchForm(idx, { mfgDate: e.target.value })}
+                        className={inputCls}
+                      />
+                    </FieldWrap>
+                    <FieldWrap label="Hạn sử dụng">
+                      <input
+                        type="date"
+                        value={batch.expDate}
+                        onChange={(e) => setBatchForm(idx, { expDate: e.target.value })}
+                        className={inputCls}
+                      />
+                    </FieldWrap>
+                    <FieldWrap label="Ghi chú lô">
+                      <input
+                        value={batch.note}
+                        onChange={(e) => setBatchForm(idx, { note: e.target.value })}
+                        className={inputCls}
+                        placeholder="VD: HSD theo tem NCC"
+                      />
+                    </FieldWrap>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex justify-end gap-3 border-t border-on-surface/8 px-6 py-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmTarget(null);
+                  setBatchForms([]);
+                }}
+                className="rounded-xl border border-on-surface/10 px-5 py-2.5 text-sm font-bold hover:bg-on-surface/5"
+              >
+                Đóng
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleConfirm(confirmTarget.grId)}
+                disabled={confirming}
+                className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-black text-white shadow-lg shadow-primary/20 disabled:opacity-60"
+              >
+                {confirming && <LoaderCircle size={15} className="animate-spin" />}
+                Xác nhận nhập kho
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Create GR Modal */}
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-950/50 p-4 pt-8">
@@ -1124,17 +1470,24 @@ function GrTab({
                             // Auto-fill NCC từ PO
                             setSupplierId(po.supplierId);
                             if (po.items?.length) {
-                              setLines(
-                                po.items.map((item) => ({
+                              // Chỉ tạo dòng cho phần CÒN LẠI chưa nhận (đặt − đã nhận).
+                              // PO nhận 1 phần: bỏ qua item đã nhận đủ, pre-fill SL còn lại.
+                              const remainingLines = po.items
+                                .map((item) => {
+                                  const remaining = Math.max(0, item.qtyOrdered - (item.qtyReceived ?? 0));
+                                  return { item, remaining };
+                                })
+                                .filter((x) => x.remaining > 0)
+                                .map(({ item, remaining }) => ({
                                   ...emptyGrItem(),
                                   productId: item.productId,
                                   unit: item.unit,
                                   unitPerBase: item.unitPerBase,
                                   qtyOrdered: item.qtyOrdered,
-                                  qtyReceived: item.qtyOrdered,
+                                  qtyReceived: remaining,
                                   unitPrice: Number(item.unitPrice),
-                                })),
-                              );
+                                }));
+                              setLines(remainingLines.length ? remainingLines : [emptyGrItem()]);
                               triggerPreview();
                             }
                           });
@@ -1182,8 +1535,8 @@ function GrTab({
                     const validIdx = validLineIndices.indexOf(idx);
                     const prev = validIdx >= 0 ? preview[validIdx] : undefined;
                     return (
-                      <div key={idx} className="rounded-xl border border-on-surface/8 bg-surface/50 p-4 space-y-3">
-                        <div className="grid gap-2 sm:grid-cols-[1fr_1fr_80px_80px]">
+                      <div key={idx} className="rounded-xl border border-on-surface/8 bg-surface/50 p-5 space-y-4">
+                        <div className="grid gap-4 sm:grid-cols-[2.2fr_1.4fr_1fr_1fr]">
                           <FieldWrap label="Sản phẩm *">
                             <select value={line.productId} onChange={(e) => setLine(idx, { productId: e.target.value })} className={selectCls}>
                               <option value="">— Chọn sản phẩm —</option>
@@ -1200,7 +1553,7 @@ function GrTab({
                             <input type="number" min={1} value={line.unitPerBase} onChange={(e) => setLine(idx, { unitPerBase: Number(e.target.value) })} className={inputCls} />
                           </FieldWrap>
                         </div>
-                        <div className="grid gap-2 sm:grid-cols-4">
+                        <div className="grid gap-4 sm:grid-cols-4">
                           <FieldWrap label="SL nhận *">
                             <input type="number" min={1} value={line.qtyReceived} onChange={(e) => setLine(idx, { qtyReceived: Number(e.target.value) })} className={inputCls} />
                           </FieldWrap>
@@ -1509,6 +1862,88 @@ function SrTab({
           </div>
         )}
       </section>
+
+      {(detailId || detail) && (
+        <div className="fixed inset-0 z-50 flex justify-end bg-black/35">
+          <aside className="h-full w-full max-w-3xl overflow-y-auto bg-surface p-6 shadow-xl">
+            <div className="mb-5 flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-black text-on-surface">Chi tiết trả hàng NCC</h2>
+                <p className="text-sm text-on-surface-variant">{detail?.srCode ?? 'Đang tải...'}</p>
+              </div>
+              <button type="button" onClick={() => setDetailId(null)} className="rounded-lg p-2 hover:bg-surface-variant">
+                <X size={20} />
+              </button>
+            </div>
+
+            {!detail ? (
+              <div className="py-16 text-center text-on-surface-variant">Đang tải chi tiết...</div>
+            ) : (
+              <div className="space-y-4">
+                <div className="grid gap-3 rounded-2xl border border-outline-variant p-4 sm:grid-cols-2">
+                  <InfoLine label="Mã SR" value={detail.srCode} />
+                  <InfoLine label="Nhà cung cấp" value={suppliers.find((s) => s.supplierId === detail.supplierId)?.name ?? detail.supplierId} />
+                  <InfoLine label="GR liên kết" value={detail.grId ?? '-'} />
+                  <InfoLine label="Trạng thái" value={SR_STATUS_LABEL[detail.status]} />
+                  <InfoLine label="Ngày trả" value={new Date(detail.returnDate).toLocaleDateString('vi-VN')} />
+                  <InfoLine label="Tổng NCC hoàn" value={fmt(detail.totalRefund)} strong />
+                </div>
+
+                <div className="rounded-2xl border border-outline-variant p-4">
+                  <h3 className="mb-3 font-black text-on-surface">Dòng sản phẩm trả NCC</h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[700px] text-sm">
+                      <thead className="text-on-surface-variant">
+                        <tr>
+                          <th className="pb-2 text-left">Sản phẩm</th>
+                          <th className="pb-2 text-right">SL trả</th>
+                          <th className="pb-2 text-right">Đơn giá</th>
+                          <th className="pb-2 text-right">NCC hoàn</th>
+                          <th className="pb-2 text-left">Lý do</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-outline-variant">
+                        {(detail.items as SrItem[]).map((item, idx) => (
+                          <tr key={`${item.productId}-${idx}`}>
+                            <td className="py-3 pr-4">
+                              <ProcurementProductCell item={item} products={products} />
+                            </td>
+                            <td className="py-3 text-right font-semibold">{item.qtyReturned}</td>
+                            <td className="py-3 text-right">{fmt(item.unitPrice)}</td>
+                            <td className="py-3 text-right font-bold text-emerald-700">{item.hasRefund ? fmt(item.refundAmount) : '-'}</td>
+                            <td className="py-3 pl-4 text-on-surface-variant">{item.reason || '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div className="grid gap-3 rounded-2xl border border-outline-variant p-4 sm:grid-cols-3">
+                  <InfoLine label="Tổng số dòng" value={String((detail.items ?? []).length)} />
+                  <InfoLine label="Tổng SL trả" value={String((detail.items as SrItem[]).reduce((sum, item) => sum + Number(item.qtyReturned ?? 0), 0))} />
+                  <InfoLine label="Tổng tiền hoàn" value={fmt(detail.totalRefund)} strong />
+                </div>
+
+                {detail.notes ? (
+                  <div className="rounded-2xl border border-outline-variant p-4">
+                    <h3 className="mb-2 font-black text-on-surface">Ghi chú</h3>
+                    <p className="text-sm text-on-surface-variant">{detail.notes}</p>
+                  </div>
+                ) : null}
+
+                {detail.status === 'draft' && (
+                  <div className="flex justify-end">
+                    <button type="button" onClick={() => void handleConfirmSr(detail.srId)} className="rounded-xl bg-primary px-4 py-2 text-sm font-black text-white hover:bg-primary/90">
+                      Xác nhận trả NCC
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </aside>
+        </div>
+      )}
 
       {/* Create SR Modal */}
       {modalOpen && (

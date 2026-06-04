@@ -168,7 +168,14 @@ function hasCollectedPayment(paymentStatus: PaymentStatus) {
 }
 
 function getAllowedOrderNextStatuses(order: Pick<OrderSummary, 'status' | 'paymentStatus'>) {
-  const next = getAllowedNextStatuses(order.status);
+  // Dropdown cập nhật trạng thái thủ công CHỈ cho fulfillment tuyến tính + hủy.
+  // Các trạng thái có luồng riêng KHÔNG đưa vào dropdown:
+  //  - partial_delivered: dùng nút "Giao một phần" (modal nhập SL thực giao)
+  //  - returned / partial_returned: dùng luồng Quản lý trả hàng (duyệt → nhận → kiểm tra → hoàn)
+  const dedicatedFlowStatuses: OrderStatus[] = ['partial_delivered', 'returned', 'partial_returned'];
+  const next = getAllowedNextStatuses(order.status).filter(
+    (status) => !dedicatedFlowStatuses.includes(status),
+  );
   return hasCollectedPayment(order.paymentStatus)
     ? next.filter((status) => status !== 'cancelled')
     : next;
@@ -225,9 +232,16 @@ export default function Orders() {
   const [activeTab, setActiveTab] = useState<'detail' | 'tracking'>('detail');
   const [nextStatus, setNextStatus] = useState<OrderStatus>('pending');
   const [creatingCancelRefund, setCreatingCancelRefund] = useState(false);
+  const [cancelRefundModalOpen, setCancelRefundModalOpen] = useState(false);
+  const [cancelRefundNote, setCancelRefundNote] = useState('');
   const [statusNote, setStatusNote] = useState('');
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [confirmingPayment, setConfirmingPayment] = useState(false);
+  // Giao một phần (partial delivery)
+  const [partialModalOpen, setPartialModalOpen] = useState(false);
+  const [partialQty, setPartialQty] = useState<Record<string, string>>({});
+  const [partialNote, setPartialNote] = useState('');
+  const [submittingPartial, setSubmittingPartial] = useState(false);
 
   const [stats, setStats] = useState<OrderStats>({});
 
@@ -491,6 +505,55 @@ export default function Orders() {
     }
   }
 
+  function openPartialModal() {
+    if (!selectedOrder) return;
+    const init: Record<string, string> = {};
+    for (const it of selectedOrder.items) init[it.id] = String(it.quantity);
+    setPartialQty(init);
+    setPartialNote('');
+    setPartialModalOpen(true);
+  }
+
+  async function handlePartialDeliver() {
+    if (!selectedOrder) return;
+    const items = selectedOrder.items.map((it) => ({
+      orderItemId: it.id,
+      deliveredQty: Math.max(0, Math.min(it.quantity, Number(partialQty[it.id] ?? it.quantity))),
+    }));
+    const hasShort = items.some((it, idx) => it.deliveredQty < selectedOrder.items[idx].quantity);
+    if (!hasShort) {
+      showToast({
+        tone: 'error',
+        title: isVietnamese ? 'Chưa có dòng nào giao thiếu' : 'No short line',
+        description: isVietnamese
+          ? 'Nhập số lượng thực giao nhỏ hơn số đặt cho ít nhất 1 sản phẩm, hoặc dùng "Cập nhật trạng thái → Đã giao" nếu giao đủ.'
+          : 'Enter a delivered qty less than ordered for at least one item.',
+      });
+      return;
+    }
+    setSubmittingPartial(true);
+    try {
+      const updated = await apiClient.patch<OrderDetail>(
+        `/orders/${selectedOrder.id}/partial-deliver`,
+        { items, note: partialNote.trim() || undefined },
+      );
+      setSelectedOrder(updated);
+      setOrders((current) =>
+        current.map((o) => (o.id === updated.id ? { ...o, status: updated.status, updatedAt: updated.updatedAt } : o)),
+      );
+      setPartialModalOpen(false);
+      showToast({ tone: 'success', title: isVietnamese ? 'Đã ghi nhận giao một phần' : 'Partial delivery recorded' });
+    } catch (err) {
+      showToast({
+        tone: 'error',
+        title: isVietnamese ? 'Giao một phần thất bại' : 'Partial delivery failed',
+        description: err instanceof Error ? err.message : '',
+      });
+    } finally {
+      setSubmittingPartial(false);
+    }
+  }
+
   async function handleConfirmPayment() {
     if (!selectedOrder) return;
     setConfirmingPayment(true);
@@ -510,21 +573,16 @@ export default function Orders() {
     }
   }
 
-  async function handleCreateCancelRefund() {
+  async function handleCreateCancelRefund(note?: string) {
     if (!selectedOrder) return;
-    const note =
-      window.prompt(
-        isVietnamese
-          ? 'Ghi chú tạo hoàn tiền hủy đơn đã thu tiền:'
-          : 'Note for paid cancellation refund:',
-      )?.trim() || undefined;
-
     setCreatingCancelRefund(true);
     try {
       await apiClient.post('/payments/admin/refunds/cancel-paid-order', {
         orderId: selectedOrder.id,
-        note,
+        note: note?.trim() || undefined,
       });
+      setCancelRefundModalOpen(false);
+      setCancelRefundNote('');
       showToast({
         tone: 'success',
         title: isVietnamese
@@ -927,7 +985,8 @@ export default function Orders() {
 
               {['delivered', 'partial_delivered'].includes(selectedOrder.status) &&
                 selectedOrder.paymentStatus === 'unpaid' &&
-                selectedOrder.paymentMethod !== 'cod' && (
+                selectedOrder.paymentMethod !== 'cod' &&
+                selectedOrder.paymentMethod !== 'credit' && (
                   <button
                     type="button"
                     onClick={() => void handleConfirmPayment()}
@@ -941,11 +1000,20 @@ export default function Orders() {
                   </button>
                 )}
 
+              {selectedOrder.paymentMethod === 'credit' &&
+                selectedOrder.paymentStatus !== 'paid' && (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700 ring-1 ring-amber-200">
+                    💳 {isVietnamese
+                      ? 'Đơn mua nợ — công nợ quản lý ở mục Hạn mức công nợ'
+                      : 'Credit order — debt tracked in Credit Limits'}
+                  </span>
+                )}
+
               {hasCollectedPayment(selectedOrder.paymentStatus) &&
                 getAllowedNextStatuses(selectedOrder.status).includes('cancelled') && (
                   <button
                     type="button"
-                    onClick={() => void handleCreateCancelRefund()}
+                    onClick={() => setCancelRefundModalOpen(true)}
                     disabled={creatingCancelRefund}
                     className="admin-pill px-4 py-2.5 text-sm font-black text-white disabled:opacity-60"
                     style={{ background: '#b45309' }}
@@ -956,11 +1024,23 @@ export default function Orders() {
                   </button>
                 )}
 
+              {activeTab === 'detail' && selectedOrder.status === 'shipping' && (
+                <button
+                  type="button"
+                  onClick={openPartialModal}
+                  className="admin-pill admin-pill-outline px-4 py-2.5 text-sm font-bold text-amber-700"
+                >
+                  📦 {isVietnamese ? 'Giao một phần' : 'Partial deliver'}
+                </button>
+              )}
+
               {activeTab === 'detail' && (
                 <div className="flex flex-wrap items-center gap-3">
                   {getAllowedOrderNextStatuses(selectedOrder).length === 0 ? (
                     <span className="rounded-xl border border-on-surface/10 bg-surface/60 px-4 py-2.5 text-sm italic text-on-surface-variant/60">
-                      {isVietnamese ? 'Đơn hàng đã kết thúc' : 'Order is finalized'}
+                      {selectedOrder.status === 'delivered' || selectedOrder.status === 'partial_delivered'
+                        ? (isVietnamese ? 'Đã giao — xử lý trả hàng ở mục Trả hàng' : 'Delivered — handle returns in Returns')
+                        : (isVietnamese ? 'Đơn hàng đã kết thúc' : 'Order is finalized')}
                     </span>
                   ) : (
                     <>
@@ -1510,6 +1590,145 @@ export default function Orders() {
               )}
             </section>
             )}
+          </div>
+        ) : null}
+      </Modal>
+      <Modal
+        open={cancelRefundModalOpen}
+        title={isVietnamese ? 'Tạo hoàn tiền để hủy đơn' : 'Create cancellation refund'}
+        description={
+          isVietnamese
+            ? 'Đơn đã thu tiền không được hủy trực tiếp. Hãy tạo yêu cầu hoàn tiền, sau đó chốt chứng từ trong Thanh toán > Hoàn tiền.'
+            : 'Paid orders cannot be cancelled directly. Create a refund request first, then complete it in Payments > Refunds.'
+        }
+        onClose={() => {
+          if (!creatingCancelRefund) {
+            setCancelRefundModalOpen(false);
+            setCancelRefundNote('');
+          }
+        }}
+        size="md"
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                setCancelRefundModalOpen(false);
+                setCancelRefundNote('');
+              }}
+              disabled={creatingCancelRefund}
+              className="rounded-2xl border border-on-surface/10 px-5 py-2.5 text-sm font-bold text-on-surface-variant transition hover:border-primary/30 hover:text-primary disabled:opacity-50"
+            >
+              {isVietnamese ? 'Hủy' : 'Cancel'}
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleCreateCancelRefund(cancelRefundNote)}
+              disabled={creatingCancelRefund}
+              className="rounded-2xl bg-amber-600 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-amber-700 disabled:opacity-50"
+            >
+              {creatingCancelRefund
+                ? isVietnamese ? 'Đang tạo...' : 'Creating...'
+                : isVietnamese ? 'Tạo yêu cầu hoàn tiền' : 'Create refund request'}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div className="rounded-2xl bg-surface px-4 py-3 text-sm">
+            <p className="font-bold text-on-surface">
+              {selectedOrder ? `#${selectedOrder.id.slice(-8).toUpperCase()} · ${currency.format(Number(selectedOrder.totalPayment))}` : '-'}
+            </p>
+            <p className="mt-1 text-on-surface-variant">
+              {isVietnamese
+                ? 'Refund này sẽ nằm trong hàng đợi Hoàn tiền và cần chứng từ khi chốt hoàn tất.'
+                : 'This refund will be queued and requires a reference when completed.'}
+            </p>
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-black uppercase tracking-[0.16em] text-on-surface-variant/60">
+              {isVietnamese ? 'Ghi chú nội bộ' : 'Internal note'}
+            </label>
+            <textarea
+              value={cancelRefundNote}
+              onChange={(event) => setCancelRefundNote(event.target.value)}
+              rows={4}
+              placeholder={isVietnamese ? 'VD: Khách yêu cầu hủy sau khi đã thanh toán MoMo...' : 'Reason or support note...'}
+              className="w-full resize-none rounded-2xl border border-on-surface/10 bg-surface px-4 py-3 text-sm outline-none focus:border-primary/40"
+            />
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={partialModalOpen}
+        title={isVietnamese ? 'Giao một phần' : 'Partial delivery'}
+        description={
+          isVietnamese
+            ? 'Nhập số lượng THỰC GIAO cho từng sản phẩm. Phần thiếu sẽ được trả về kho (FIFO) và tiền được tính lại theo phần đã giao.'
+            : 'Enter actually delivered quantity per item. The shortfall is restocked (FIFO) and total is recalculated.'
+        }
+        onClose={() => { if (!submittingPartial) setPartialModalOpen(false); }}
+        size="lg"
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={() => setPartialModalOpen(false)}
+              disabled={submittingPartial}
+              className="rounded-2xl border border-on-surface/10 px-5 py-2.5 text-sm font-bold text-on-surface-variant transition hover:border-primary/30 disabled:opacity-50"
+            >
+              {isVietnamese ? 'Hủy' : 'Cancel'}
+            </button>
+            <button
+              type="button"
+              onClick={() => void handlePartialDeliver()}
+              disabled={submittingPartial}
+              className="rounded-2xl bg-amber-600 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-amber-700 disabled:opacity-50"
+            >
+              {submittingPartial
+                ? (isVietnamese ? 'Đang xử lý...' : 'Processing...')
+                : (isVietnamese ? 'Xác nhận giao một phần' : 'Confirm partial delivery')}
+            </button>
+          </>
+        }
+      >
+        {selectedOrder ? (
+          <div className="space-y-2">
+            {selectedOrder.items.map((it) => {
+              const actual = Number(partialQty[it.id] ?? it.quantity);
+              const short = actual < it.quantity;
+              return (
+                <div
+                  key={it.id}
+                  className={`flex items-center justify-between gap-3 rounded-xl border p-3 ${short ? 'border-amber-300 bg-amber-50' : 'border-on-surface/10 bg-surface'}`}
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-bold text-on-surface">{it.productName}</p>
+                    <p className="text-xs text-on-surface-variant">{isVietnamese ? 'Đặt' : 'Ordered'}: {it.quantity}</p>
+                  </div>
+                  <input
+                    type="number"
+                    min={0}
+                    max={it.quantity}
+                    value={partialQty[it.id] ?? String(it.quantity)}
+                    onChange={(e) => setPartialQty((prev) => ({ ...prev, [it.id]: e.target.value }))}
+                    className="w-20 rounded-lg border border-on-surface/15 bg-white px-2 py-1.5 text-center text-sm font-bold outline-none"
+                  />
+                  {short && (
+                    <span className="text-xs font-bold text-amber-700">
+                      {isVietnamese ? 'Thiếu' : 'Short'} {it.quantity - actual}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+            <input
+              value={partialNote}
+              onChange={(e) => setPartialNote(e.target.value)}
+              placeholder={isVietnamese ? 'Ghi chú (vd: khách chỉ nhận 1 phần)' : 'Note'}
+              className="mt-2 w-full rounded-xl border border-on-surface/10 bg-surface px-4 py-2.5 text-sm outline-none focus:border-primary/40"
+            />
           </div>
         ) : null}
       </Modal>

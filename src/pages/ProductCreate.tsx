@@ -28,6 +28,8 @@ type Tag = {
   tagName: string;
 };
 
+type ListResponse<T> = T[] | { items?: T[] };
+
 type ProductCreatePayload = {
   productId: string;
   productName: string;
@@ -93,12 +95,12 @@ export default function ProductCreate() {
       try {
         const [cats, origs, tagsData] = await Promise.all([
           apiClient.get<CategoryNode[]>('/categories/admin/tree'),
-          apiClient.get<Origin[]>('/origins').catch(() => [] as Origin[]),
+          apiClient.get<ListResponse<Origin>>('/origins?limit=500').catch(() => [] as Origin[]),
           apiClient.get<Tag[]>('/tags').catch(() => [] as Tag[]),
         ]);
         if (!cancelled) {
           setCategories(cats);
-          setOrigins(Array.isArray(origs) ? origs : []);
+          setOrigins(toList(origs));
           setTags(Array.isArray(tagsData) ? tagsData : []);
         }
       } catch (error) {
@@ -122,8 +124,8 @@ export default function ProductCreate() {
   useEffect(() => {
     if (!formState.categoryId) { setSubcategories([]); return; }
     void apiClient
-      .get<Subcategory[]>(`/subcategories?categoryId=${formState.categoryId}&limit=100`)
-      .then((d) => setSubcategories(Array.isArray(d) ? d : []))
+      .get<ListResponse<Subcategory>>(`/subcategories?categoryId=${formState.categoryId}&limit=100`)
+      .then((d) => setSubcategories(toList(d)))
       .catch(() => setSubcategories([]));
   }, [formState.categoryId]);
 
@@ -440,6 +442,10 @@ export default function ProductCreate() {
 
 function formatVND(n: number) {
   return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(n);
+}
+
+function toList<T>(response: ListResponse<T>): T[] {
+  return Array.isArray(response) ? response : response.items ?? [];
 }
 
 function flattenCategories(nodes: CategoryNode[], level = 0): Array<{ value: string; label: string }> {

@@ -157,6 +157,39 @@ function writeRecentlyViewedProduct(product: Product) {
   }
 }
 
+function mergeRelatedProducts(
+  currentProductId: string,
+  recommendedItems: RelatedProduct[],
+  categoryItems: RelatedProduct[],
+) {
+  const categoryById = new Map(categoryItems.map((item) => [item.productId, item]));
+  const seen = new Set<string>();
+  const result: RelatedProduct[] = [];
+
+  const addItem = (item: RelatedProduct) => {
+    if (!item?.productId || item.productId === currentProductId || seen.has(item.productId)) return;
+    const fallback = categoryById.get(item.productId);
+    const merged: RelatedProduct = {
+      ...fallback,
+      ...item,
+      productName: item.productName || fallback?.productName || '',
+      effectivePrice: item.effectivePrice ?? fallback?.effectivePrice ?? item.basePrice ?? fallback?.basePrice ?? '0',
+      basePrice: item.basePrice ?? fallback?.basePrice,
+      primaryImageUrl: item.primaryImageUrl ?? fallback?.primaryImageUrl ?? null,
+    };
+    if (!merged.productName) return;
+    seen.add(merged.productId);
+    result.push(merged);
+  };
+
+  recommendedItems.forEach(addItem);
+  categoryItems.forEach(addItem);
+  return [
+    ...result.filter((item) => item.primaryImageUrl),
+    ...result.filter((item) => !item.primaryImageUrl),
+  ];
+}
+
 function StarRating({ value, onChange }: { value: number; onChange?: (v: number) => void }) {
   const [hover, setHover] = useState(0);
   return (
@@ -245,25 +278,23 @@ export default function ProductDetail() {
       .then(async (data) => {
         setProduct(data);
         setRecentlyViewed(writeRecentlyViewedProduct(data));
-        void clientApi
-          .get<RecommendationResponse>(
-            `/intelligence/product-recommendations?productId=${encodeURIComponent(id)}&limit=8&historyDays=180`,
-          )
-          .then((r) => {
-            const items = (r.items ?? []).filter((p) => p.productId !== id);
-            if (items.length > 0) setRelated(items);
-          })
-          .catch(() => {});
-        if (data.category?.categoryId) {
-          void clientApi
-            .get<{ meta: unknown; items: RelatedProduct[] }>(`/products?categoryId=${data.category.categoryId}&limit=5`)
-            .then((r) => {
-              setRelated((current) =>
-                current.length > 0 ? current : (r.items ?? []).filter((p) => p.productId !== id),
-              );
-            })
-            .catch(() => {});
-        }
+        const [recommendations, categoryProducts] = await Promise.all([
+          clientApi
+            .get<RecommendationResponse>(
+              `/intelligence/product-recommendations?productId=${encodeURIComponent(id)}&limit=8&historyDays=180`,
+            )
+            .then((r) => r.items ?? [])
+            .catch(() => []),
+          data.category?.categoryId
+            ? clientApi
+                .get<{ meta: unknown; items: RelatedProduct[] }>(
+                  `/products?categoryId=${encodeURIComponent(data.category.categoryId)}&limit=8`,
+                )
+                .then((r) => r.items ?? [])
+                .catch(() => [])
+            : Promise.resolve([]),
+        ]);
+        setRelated(mergeRelatedProducts(id, recommendations, categoryProducts));
       })
       .catch(() => { void navigate('/client/products'); })
       .finally(() => setLoading(false));

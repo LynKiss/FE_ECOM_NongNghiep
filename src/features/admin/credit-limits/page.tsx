@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { apiClient } from '../../../lib/api';
 import { hasAdminPermission } from '../../../lib/admin-session';
+import { useConfirmDialog } from '../../../hooks/useConfirmDialog';
 
 type DebtStatus = 'all' | 'outstanding' | 'near_limit' | 'over_limit';
 
@@ -111,6 +112,7 @@ function txTypeLabel(type: string) {
 }
 
 export default function CreditLimitsPage() {
+  const { confirm: askConfirm, ConfirmDialog } = useConfirmDialog();
   const [items, setItems] = useState<CreditLimitItem[]>([]);
   const [meta, setMeta] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
   const [loading, setLoading] = useState(false);
@@ -262,13 +264,20 @@ export default function CreditLimitsPage() {
   };
 
   const handleDelete = async (userId: string) => {
-    if (!window.confirm('Vô hiệu hạn mức công nợ của khách hàng này?')) return;
+    const ok = await askConfirm({
+      title: 'Vô hiệu hạn mức công nợ?',
+      description: 'Khách hàng sẽ không còn được sử dụng hạn mức công nợ cho các đơn mới cho đến khi được cấu hình lại.',
+      tone: 'danger',
+      confirmLabel: 'Vô hiệu',
+    });
+    if (!ok) return;
     await apiClient.delete(`/credit-limits/user/${userId}`);
     void load();
   };
 
   return (
     <div className="space-y-5">
+      {ConfirmDialog}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="flex items-center gap-3">
           <CreditCard className="h-6 w-6 text-primary" />

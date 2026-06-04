@@ -17,6 +17,7 @@ import Pagination from '../components/shared/Pagination';
 import { useToast } from '../hooks/useToast';
 import { useLanguage } from '../i18n/language-context';
 import { apiClient } from '../lib/api';
+import { useConfirmDialog } from '../hooks/useConfirmDialog';
 
 type CommentStatus = 'visible' | 'hidden' | 'deleted';
 
@@ -71,6 +72,7 @@ export default function NewsComments() {
   const { language } = useLanguage();
   const isVietnamese = language === 'vi';
   const { showToast } = useToast();
+  const { confirm: askConfirm, ConfirmDialog } = useConfirmDialog();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [comments, setComments] = useState<CommentItem[]>([]);
@@ -189,7 +191,13 @@ export default function NewsComments() {
   }
 
   async function handleDelete(id: string) {
-    if (!window.confirm('Xóa bình luận này?')) return;
+    const ok = await askConfirm({
+      title: 'Xóa bình luận?',
+      description: 'Bình luận sẽ bị xóa khỏi danh sách hiển thị và không thể khôi phục từ màn này.',
+      tone: 'danger',
+      confirmLabel: 'Xóa',
+    });
+    if (!ok) return;
 
     try {
       await apiClient.delete(`/news/admin/comments/${id}`);
@@ -223,6 +231,7 @@ export default function NewsComments() {
 
   return (
     <div className="space-y-6 pb-12">
+      {ConfirmDialog}
       <div>
         <h1 className="text-4xl font-black tracking-tight text-primary">
           Quản lý bình luận bài viết

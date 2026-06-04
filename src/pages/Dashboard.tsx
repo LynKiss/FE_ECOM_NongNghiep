@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import {
@@ -54,6 +54,8 @@ type ProductsResponse = {
     total: number;
   };
 };
+
+type ProductsPayload = ProductItem[] | ProductsResponse;
 
 type RecentOrder = {
   id: string;
@@ -215,7 +217,7 @@ type DashboardSocketPayload = {
   dashboard?: DashboardResponse;
 };
 
-type OrdersResponse = {
+type OrdersResponse = RecentOrder[] | {
   items: RecentOrder[];
 };
 
@@ -240,16 +242,28 @@ const tooltipStyle = {
   color: 'var(--theme-on-surface)',
 };
 
+function listFromPayload<T>(payload: T[] | { items?: T[] } | null | undefined): T[] {
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+
+  if (payload && Array.isArray(payload.items)) {
+    return payload.items;
+  }
+
+  return [];
+}
+
 export default function Dashboard() {
   const { language } = useLanguage();
   const { session } = useAdminSession();
   const isVietnamese = language === 'vi';
   const canViewReports =
-    session?.user.permissions?.some(
+    session?.user?.permissions?.some(
       (permission) => permission.key === 'manage_reports',
     ) ?? false;
   const canViewOrders =
-    session?.user.permissions?.some(
+    session?.user?.permissions?.some(
       (permission) => permission.key === 'manage_orders',
     ) ?? false;
 
@@ -300,7 +314,7 @@ export default function Dashboard() {
     setError(null);
 
     try {
-      const productRequest = apiClient.get<ProductsResponse>('/products?limit=8');
+      const productRequest = apiClient.get<ProductsPayload>('/products?limit=8');
       const reportRequest = canViewReports
         ? apiClient.get<DashboardResponse>('/reports/dashboard')
         : Promise.resolve(null);
@@ -314,9 +328,9 @@ export default function Dashboard() {
         ordersRequest,
       ]);
 
-      setPublicProducts(productData.items);
+      setPublicProducts(listFromPayload<ProductItem>(productData));
       setDashboard(dashboardData);
-      setRecentOrders(ordersData?.items ?? []);
+      setRecentOrders(listFromPayload<RecentOrder>(ordersData));
       setLastUpdated(
         dashboardData?.refreshedAt ??
           (dashboardData ? new Date().toISOString() : null),
@@ -343,7 +357,7 @@ export default function Dashboard() {
       setError(null);
 
       try {
-        const productRequest = apiClient.get<ProductsResponse>('/products?limit=8');
+        const productRequest = apiClient.get<ProductsPayload>('/products?limit=8');
         const reportRequest = canViewReports
           ? apiClient.get<DashboardResponse>('/reports/dashboard')
           : Promise.resolve(null);
@@ -358,9 +372,9 @@ export default function Dashboard() {
         ]);
 
         if (!cancelled) {
-          setPublicProducts(productData.items);
+          setPublicProducts(listFromPayload<ProductItem>(productData));
           setDashboard(dashboardData);
-          setRecentOrders(ordersData?.items ?? []);
+          setRecentOrders(listFromPayload<RecentOrder>(ordersData));
           setLastUpdated(
             dashboardData?.refreshedAt ??
               (dashboardData ? new Date().toISOString() : null),
@@ -372,7 +386,7 @@ export default function Dashboard() {
             loadError instanceof Error
               ? loadError.message
               : isVietnamese
-                ? 'Không tải được dữ liệu dashboard'
+            ? 'Không tải được dữ liệu dashboard'
                 : 'Unable to load dashboard data',
           );
         }
@@ -420,12 +434,9 @@ export default function Dashboard() {
     socket.on('dashboard:snapshot', handlePayload);
     socket.on('dashboard:updated', handlePayload);
     socket.on('dashboard:error', (payload: { message?: string }) => {
-      setError(
-        payload?.message ??
-          (isVietnamese
-            ? 'Realtime dashboard gặp lỗi'
-            : 'Realtime dashboard failed'),
-      );
+      const message =
+        payload?.message ?? (isVietnamese ? 'Realtime dashboard gặp lỗi' : 'Realtime dashboard failed');
+      setError(message);
     });
 
     return () => {
@@ -618,21 +629,22 @@ export default function Dashboard() {
 
   const dashboardRecentOrders = dashboard?.recentOrders ?? [];
   const orderRows = dashboardRecentOrders.length ? dashboardRecentOrders : recentOrders;
-  const hasReportData = Boolean(dashboard);
+  const totals = dashboard?.totals;
+  const hasReportData = Boolean(totals);
   const isLive = socketState === 'live';
-  const changePct = dashboard?.totals.revenueChangePct ?? 0;
+  const changePct = totals?.revenueChangePct ?? 0;
 
   const fallbackProducts = dashboard?.topProducts?.length
-    ? dashboard.topProducts.slice(0, 4).map((item) => ({
+    ? dashboard.topProducts?.slice(0, 4).map((item) => ({
         name: item.productName,
         meta: isVietnamese
-          ? `${item.soldQuantity} đã bán`
+          ? `Đã bán ${formatNumber(item.soldQuantity || 0)}`
           : `${item.soldQuantity} sold`,
-      }))
+      })) ?? []
     : publicProducts.slice(0, 4).map((item) => ({
         name: item.productName,
         meta: isVietnamese
-          ? `${item.quantityAvailable} tồn kho`
+          ? `Tồn ${formatNumber(item.quantityAvailable ?? 0)}`
           : `${item.quantityAvailable} in stock`,
       }));
 
@@ -651,18 +663,16 @@ export default function Dashboard() {
                   ? isVietnamese
                     ? 'Đang kết nối realtime'
                     : 'Connecting realtime'
-                  : isVietnamese
-                    ? 'Polling dự phòng'
-                    : 'Fallback polling'}
+                  : 'Fallback polling'}
             </div>
             <h2 className="max-w-4xl text-4xl font-black tracking-tight md:text-5xl">
               {isVietnamese
-                ? 'Dashboard điều hành nông nghiệp'
+                ? 'Tổng quan điều hành'
                 : 'Agriculture commerce command dashboard'}
             </h2>
             <p className="mt-3 max-w-3xl text-sm font-medium text-white/78">
               {isVietnamese
-                ? 'Theo dõi doanh thu, đơn hàng, tồn kho, khách hàng, voucher, đánh giá và chẩn đoán bệnh lúa trên cùng một màn hình. Biểu đồ tự đổi khi backend phát sự kiện thay đổi dữ liệu.'
+                ? 'Theo dõi doanh thu thực, tồn kho, đơn hàng, voucher, AI bệnh lúa và cảnh báo vận hành.'
                 : 'Track revenue, orders, inventory, customers, vouchers, reviews and rice diagnosis in one screen. Charts update when the backend emits data-change events.'}
             </p>
           </div>
@@ -700,123 +710,87 @@ export default function Dashboard() {
       {!canViewReports ? (
         <div className="rounded-3xl border border-amber-200 bg-amber-50 p-6 text-sm font-semibold text-amber-800">
           {isVietnamese
-            ? 'Tài khoản hiện tại chưa có quyền manage_reports nên chỉ xem được dữ liệu công khai cơ bản.'
+            ? 'Tài khoản hiện tại chưa có quyền xem báo cáo tổng quan. Vui lòng liên hệ quản trị viên.'
             : 'The current account does not have manage_reports permission, so only basic public data is shown.'}
         </div>
       ) : null}
 
-      {blockVisible('metric_cards') && <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard
-          title={isVietnamese ? 'Tổng doanh thu' : 'Total revenue'}
-          value={hasReportData ? money(dashboard.totals.revenue) : '-'}
-          helper={
-            hasReportData
-              ? `${isVietnamese ? '30 ngày' : '30 days'}: ${moneyCompact(dashboard.totals.last30Revenue)}`
-              : isVietnamese
-                ? 'Đang chờ dữ liệu'
-                : 'Waiting for data'
-          }
-          icon={TrendingUp}
-          tone="green"
-          loading={loading}
-        />
-        <MetricCard
-          title={isVietnamese ? 'Hôm nay' : 'Today'}
-          value={hasReportData ? money(dashboard.totals.todayRevenue) : '-'}
-          helper={
-            hasReportData
-              ? `${dashboard.totals.todayOrders ?? 0} ${isVietnamese ? 'đơn' : 'orders'} | ${formatPercent(changePct)}`
-              : '-'
-          }
-          icon={changePct >= 0 ? TrendingUp : TrendingDown}
-          tone={changePct >= 0 ? 'emerald' : 'orange'}
-          loading={loading}
-        />
-        <MetricCard
-          title={isVietnamese ? 'Đơn hàng' : 'Orders'}
-          value={hasReportData ? numberCompact(dashboard.totals.orders) : '-'}
-          helper={
-            hasReportData
-              ? `${dashboard.totals.pendingOrders} ${isVietnamese ? 'chờ xử lý' : 'pending'}`
-              : '-'
-          }
-          icon={ShoppingCart}
-          tone="blue"
-          loading={loading}
-        />
-        <MetricCard
-          title={isVietnamese ? 'Tồn kho' : 'Inventory'}
-          value={hasReportData ? numberCompact(dashboard.totals.availableUnits) : '-'}
-          helper={
-            hasReportData
-              ? `${dashboard.totals.lowStockProducts} ${isVietnamese ? 'sắp hết' : 'low stock'}`
-              : '-'
-          }
-          icon={Boxes}
-          tone="amber"
-          loading={loading}
-        />
-        <MetricCard
-          title={isVietnamese ? 'Giá trị kho' : 'Inventory value'}
-          value={hasReportData ? moneyCompact(dashboard.totals.inventoryValue) : '-'}
-          helper={
-            hasReportData
-              ? `${isVietnamese ? 'Tiềm năng bán' : 'Potential'}: ${moneyCompact(dashboard.totals.potentialRevenue)}`
-              : '-'
-          }
-          icon={Package}
-          tone="green"
-          loading={loading}
-        />
-        <MetricCard
-          title={isVietnamese ? 'Khách hàng' : 'Customers'}
-          value={hasReportData ? numberCompact(dashboard.totals.customers) : '-'}
-          helper={
-            hasReportData
-              ? `${dashboard.totals.activeCustomers ?? 0} ${isVietnamese ? 'đang hoạt động' : 'active'}`
-              : '-'
-          }
-          icon={Users}
-          tone="blue"
-          loading={loading}
-        />
-        <MetricCard
-          title={isVietnamese ? 'Voucher' : 'Vouchers'}
-          value={hasReportData ? numberCompact(dashboard.totals.activeDiscounts) : '-'}
-          helper={
-            hasReportData
-              ? `${dashboard.totals.couponUsageCount ?? 0} ${isVietnamese ? 'lượt dùng' : 'uses'}`
-              : '-'
-          }
-          icon={Percent}
-          tone="orange"
-          loading={loading}
-        />
-        <MetricCard
-          title={isVietnamese ? 'Đánh giá / AI lúa' : 'Reviews / rice AI'}
-          value={
-            hasReportData
-              ? `${dashboard.totals.averageRating ?? '0.00'}★ / ${dashboard.totals.totalDiagnoses ?? 0}`
-              : '-'
-          }
-          helper={
-            hasReportData
-              ? `${dashboard.totals.visibleReviews ?? 0} ${isVietnamese ? 'đánh giá hiển thị' : 'visible reviews'}`
-              : '-'
-          }
-          icon={Wheat}
-          tone="emerald"
-          loading={loading}
-        />
-      </div>}
+      {blockVisible('metric_cards') && (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <MetricCard
+            title={isVietnamese ? 'Tổng doanh thu' : 'Total Revenue'}
+            value={hasReportData ? money(totals?.revenue) : '-'}
+            helper={hasReportData ? (isVietnamese ? '30 ngày gần nhất' : 'Last 30 days') : isVietnamese ? 'Đang chờ dữ liệu' : 'Waiting for data'}
+            icon={TrendingUp}
+            tone="green"
+            loading={loading}
+          />
+          <MetricCard
+            title={isVietnamese ? 'Hôm nay' : 'Today'}
+            value={hasReportData ? money(totals?.todayRevenue) : '-'}
+            helper={hasReportData ? (isVietnamese ? `${formatNumber(totals?.todayOrders)} đơn mới` : `${formatNumber(totals?.todayOrders)} new orders`) : '-'}
+            icon={changePct >= 0 ? TrendingUp : TrendingDown}
+            tone={changePct >= 0 ? 'emerald' : 'orange'}
+            loading={loading}
+          />
+          <MetricCard
+            title={isVietnamese ? 'Đơn hàng' : 'Orders'}
+            value={hasReportData ? numberCompact(totals?.orders) : '-'}
+            helper={hasReportData ? (isVietnamese ? `${formatNumber(totals?.pendingOrders)} đơn chờ xử lý` : `${formatNumber(totals?.pendingOrders)} pending`) : '-'}
+            icon={ShoppingCart}
+            tone="blue"
+            loading={loading}
+          />
+          <MetricCard
+            title={isVietnamese ? 'Tồn kho' : 'Inventory'}
+            value={hasReportData ? numberCompact(totals?.availableUnits) : '-'}
+            helper={hasReportData ? (isVietnamese ? `${formatNumber(totals?.lowStockProducts)} cảnh báo tồn thấp` : `${formatNumber(totals?.lowStockProducts)} low stock alerts`) : '-'}
+            icon={Boxes}
+            tone="amber"
+            loading={loading}
+          />
+          <MetricCard
+            title={isVietnamese ? 'Giá trị kho' : 'Inventory Value'}
+            value={hasReportData ? moneyCompact(totals?.inventoryValue) : '-'}
+            helper={hasReportData ? (isVietnamese ? `Tiềm năng bán: ${moneyCompact(totals?.potentialRevenue)}` : `Sales potential: ${moneyCompact(totals?.potentialRevenue)}`) : '-'}
+            icon={Package}
+            tone="green"
+            loading={loading}
+          />
+          <MetricCard
+            title={isVietnamese ? 'Khách hàng' : 'Customers'}
+            value={hasReportData ? numberCompact(totals?.customers) : '-'}
+            helper={hasReportData ? (isVietnamese ? `${formatNumber(totals?.activeCustomers)} đang hoạt động` : `${formatNumber(totals?.activeCustomers)} active`) : '-'}
+            icon={Users}
+            tone="blue"
+            loading={loading}
+          />
+          <MetricCard
+            title={isVietnamese ? 'Voucher' : 'Vouchers'}
+            value={hasReportData ? numberCompact(totals?.activeDiscounts) : '-'}
+            helper={hasReportData ? (isVietnamese ? `${formatNumber(totals?.couponUsageCount)} lượt dùng` : `${formatNumber(totals?.couponUsageCount)} usages`) : '-'}
+            icon={Percent}
+            tone="orange"
+            loading={loading}
+          />
+          <MetricCard
+            title={isVietnamese ? 'Đánh giá / AI lúa' : 'Reviews / Rice AI'}
+            value={hasReportData ? `${formatNumber(totals?.averageRating || 0)}★ / ${formatNumber(totals?.totalDiagnoses || 0)}` : '-'}
+            helper={hasReportData ? (isVietnamese ? `${formatNumber(totals?.visibleReviews)} đánh giá hiển thị` : `${formatNumber(totals?.visibleReviews)} visible reviews`) : '-'}
+            icon={Wheat}
+            tone="emerald"
+            loading={loading}
+          />
+        </div>
+      )}
 
       {(blockVisible('revenue_chart') || blockVisible('order_status_chart')) && <div className="grid grid-cols-1 gap-6 xl:grid-cols-4">
         {blockVisible('revenue_chart') && <ChartCard
-          title={isVietnamese ? 'Doanh thu & đơn hàng 30 ngày' : '30-day revenue and orders'}
-          subtitle={isVietnamese ? 'Area = doanh thu, cột = số đơn' : 'Area = revenue, bars = orders'}
+          title={isVietnamese ? 'Doanh thu & đơn hoàn tất 30 ngày' : '30-day recognized revenue and fulfilled orders'}
+          subtitle={isVietnamese ? 'Ghi nhận theo ngày giao/nhận hoàn tất; area = doanh thu, cột = số đơn' : 'Recognized by fulfillment date; area = revenue, bars = orders'}
           className="xl:col-span-3"
         >
-          <EmptyState show={!dailyRevenue.length && !loading} label={isVietnamese ? 'Chưa có doanh thu.' : 'No revenue yet.'}>
+          <EmptyState show={!dailyRevenue.length && !loading} label={isVietnamese ? 'Chưa có doanh thu ghi nhận từ đơn đã hoàn tất trong 30 ngày.' : 'No recognized revenue from fulfilled orders in the last 30 days.'}>
             <ResponsiveContainer width="100%" height={360}>
               <ComposedChart data={dailyRevenue} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                 <defs>
@@ -831,7 +805,7 @@ export default function Dashboard() {
                 <YAxis yAxisId="right" orientation="right" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#607162' }} />
                 <Tooltip contentStyle={tooltipStyle} formatter={(value, name) => name === 'revenue' ? money(value as NumericValue) : numberCompact(value as NumericValue)} />
                 <Legend />
-                <Bar yAxisId="right" dataKey="orders" name={isVietnamese ? 'Đơn hàng' : 'Orders'} fill="#d6a51d" radius={[8, 8, 0, 0]} barSize={18} />
+                <Bar yAxisId="right" dataKey="orders" name={isVietnamese ? 'Đơn hoàn tất' : 'Fulfilled orders'} fill="#d6a51d" radius={[8, 8, 0, 0]} barSize={18} />
                 <Area yAxisId="left" type="monotone" dataKey="revenue" name={isVietnamese ? 'Doanh thu' : 'Revenue'} stroke="#1b5e20" strokeWidth={3} fill="url(#revenueFill)" />
               </ComposedChart>
             </ResponsiveContainer>
@@ -839,14 +813,14 @@ export default function Dashboard() {
         </ChartCard>}
 
         {blockVisible('order_status_chart') && <ChartCard
-          title={isVietnamese ? 'Tỷ lệ trạng thái đơn' : 'Order status mix'}
-          subtitle={isVietnamese ? 'Phát hiện backlog xử lý' : 'Detect operations backlog'}
+          title={isVietnamese ? 'Tỷ lệ trạng thái đơn' : 'Order Status Mix'}
+          subtitle={isVietnamese ? 'Phát hiện backlog xử lý' : 'Spot processing backlog'}
         >
-          <DonutChart
-            data={orderStatusData}
-            valueFormatter={numberCompact}
-            emptyLabel={isVietnamese ? 'Chưa có đơn hàng.' : 'No orders.'}
-          />
+          {orderStatusData.length === 0 ? (
+            <EmptyChart message={isVietnamese ? 'Chưa có đơn hàng.' : 'No orders yet.'} />
+          ) : (
+            <DonutChart data={orderStatusData} valueFormatter={numberCompact} />
+          )}
           <div className="mt-4 space-y-2">
             {orderStatusData.slice(0, 5).map((item, index) => (
               <div key={item.raw}>
@@ -863,11 +837,11 @@ export default function Dashboard() {
 
       {(blockVisible('top_products_chart') || blockVisible('category_revenue')) && <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         {blockVisible('top_products_chart') && <ChartCard
-          title={isVietnamese ? 'Top sản phẩm bán chạy' : 'Top selling products'}
+          title={isVietnamese ? 'Top sản phẩm bán chạy' : 'Top Selling Products'}
           subtitle={isVietnamese ? 'Xếp theo số lượng bán' : 'Ranked by sold quantity'}
           className="xl:col-span-2"
         >
-          <EmptyState show={!topProducts.length && !loading} label={isVietnamese ? 'Chưa có sản phẩm bán chạy.' : 'No top products yet.'}>
+          <EmptyState show={!topProducts.length} label={isVietnamese ? 'Chưa có dữ liệu sản phẩm.' : 'No product data yet.'}>
             <ResponsiveContainer width="100%" height={330}>
               <BarChart layout="vertical" data={topProducts} margin={{ top: 0, right: 24, left: 18, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="rgba(96,113,98,0.16)" />
@@ -881,10 +855,10 @@ export default function Dashboard() {
         </ChartCard>}
 
         {blockVisible('category_revenue') && <ChartCard
-          title={isVietnamese ? 'Doanh thu theo danh mục' : 'Revenue by category'}
-          subtitle={isVietnamese ? 'Danh mục nào kéo doanh thu' : 'Which category drives revenue'}
+          title={isVietnamese ? 'Doanh thu theo danh mục' : 'Category Revenue'}
+          subtitle={isVietnamese ? 'Danh mục nào kéo doanh thu' : 'Which categories drive revenue'}
         >
-          <EmptyState show={!categoryRevenue.length && !loading} label={isVietnamese ? 'Chưa có dữ liệu danh mục.' : 'No category data.'}>
+          <EmptyState show={!categoryRevenue.length} label={isVietnamese ? 'Chưa có doanh thu danh mục.' : 'No category revenue.'}>
             <ResponsiveContainer width="100%" height={330}>
               <BarChart data={categoryRevenue} margin={{ top: 10, right: 10, left: 0, bottom: 30 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(96,113,98,0.16)" />
@@ -900,8 +874,8 @@ export default function Dashboard() {
 
       {(blockVisible('shopping_hours') || blockVisible('payment_mix') || blockVisible('stock_health')) && <div className="grid grid-cols-1 gap-6 xl:grid-cols-4">
         {blockVisible('shopping_hours') && <ChartCard
-          title={isVietnamese ? 'Giờ vàng mua sắm' : 'Shopping golden hours'}
-          subtitle={isVietnamese ? 'Nhiệt doanh thu theo 24 giờ gần đây' : 'Revenue heat by hour in the last 30 days'}
+          title={isVietnamese ? 'Giờ vàng mua sắm' : 'Shopping Heatmap'}
+          subtitle={isVietnamese ? 'Nhiệt doanh thu theo 24 giờ gần đây' : 'Revenue heat by hour'}
           className="xl:col-span-2"
         >
           <div className="grid grid-cols-6 gap-3 sm:grid-cols-8 lg:grid-cols-12">
@@ -923,18 +897,18 @@ export default function Dashboard() {
         </ChartCard>}
 
         {blockVisible('payment_mix') && <ChartCard
-          title={isVietnamese ? 'Cơ cấu thanh toán' : 'Payment mix'}
-          subtitle={isVietnamese ? 'COD, ví, chuyển khoản...' : 'COD, wallet, bank transfer...'}
+          title={isVietnamese ? 'Cơ cấu thanh toán' : 'Payment Mix'}
+          subtitle={isVietnamese ? 'COD, ví, chuyển khoản...' : 'COD, wallets, bank...'}
         >
           <DonutChart
             data={paymentMethodData}
             valueFormatter={numberCompact}
-            emptyLabel={isVietnamese ? 'Chưa có thanh toán.' : 'No payments.'}
+            emptyLabel={isVietnamese ? 'Chưa có thanh toán.' : 'No payment data.'}
           />
         </ChartCard>}
 
         {blockVisible('stock_health') && <ChartCard
-          title={isVietnamese ? 'Sức khỏe tồn kho' : 'Stock health'}
+          title={isVietnamese ? 'Sức khỏe tồn kho' : 'Inventory Health'}
           subtitle={isVietnamese ? 'Hết, thấp, trung bình, tốt' : 'Out, low, medium, healthy'}
         >
           <DonutChart
@@ -947,11 +921,11 @@ export default function Dashboard() {
 
       {(blockVisible('inventory_chart') || blockVisible('customer_segments')) && <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         {blockVisible('inventory_chart') && <ChartCard
-          title={isVietnamese ? 'Giá trị tồn kho theo danh mục' : 'Inventory value by category'}
-          subtitle={isVietnamese ? 'So sánh vốn đang nằm trong kho' : 'Compare capital locked in inventory'}
+          title={isVietnamese ? 'Giá trị tồn kho theo danh mục' : 'Inventory Value by Category'}
+          subtitle={isVietnamese ? 'So sánh vốn đang nằm trong kho' : 'Capital tied in stock'}
           className="xl:col-span-2"
         >
-          <EmptyState show={!inventoryByCategory.length && !loading} label={isVietnamese ? 'Chưa có dữ liệu kho.' : 'No inventory data.'}>
+          <EmptyState show={!inventoryByCategory.length} label={isVietnamese ? 'Chưa có dữ liệu kho.' : 'No inventory value data.'}>
             <ResponsiveContainer width="100%" height={320}>
               <ComposedChart data={inventoryByCategory} margin={{ top: 10, right: 10, left: 0, bottom: 30 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(96,113,98,0.16)" />
@@ -960,21 +934,21 @@ export default function Dashboard() {
                 <YAxis yAxisId="right" orientation="right" axisLine={false} tickLine={false} tickFormatter={numberCompact} tick={{ fontSize: 12, fill: '#607162' }} />
                 <Tooltip contentStyle={tooltipStyle} formatter={(value, name) => name === 'value' ? money(value as NumericValue) : numberCompact(value as NumericValue)} />
                 <Legend />
-                <Bar yAxisId="left" dataKey="value" name={isVietnamese ? 'Giá trị kho' : 'Inventory value'} fill="#1b5e20" radius={[8, 8, 0, 0]} />
-                <Line yAxisId="right" type="monotone" dataKey="stock" name={isVietnamese ? 'Tồn khả dụng' : 'Available stock'} stroke="#d6a51d" strokeWidth={3} dot={{ r: 3 }} />
+                <Bar dataKey="value" name={isVietnamese ? 'Giá trị kho' : 'Stock value'} fill="#0b6b43" radius={[10, 10, 0, 0]} />
+                <Line type="monotone" dataKey="quantity" name={isVietnamese ? 'Tồn khả dụng' : 'Available stock'} stroke="#f97316" strokeWidth={3} />
               </ComposedChart>
             </ResponsiveContainer>
           </EmptyState>
         </ChartCard>}
 
         {blockVisible('customer_segments') && <ChartCard
-          title={isVietnamese ? 'Phân khúc khách hàng' : 'Customer segments'}
-          subtitle={isVietnamese ? 'Chưa mua, mua 1 lần, lặp lại, thân thiết' : 'No order, one-time, repeat, loyal'}
+          title={isVietnamese ? 'Phân khúc khách hàng' : 'Customer Segments'}
+          subtitle={isVietnamese ? 'Chưa mua, mua 1 lần, lặp lại, thân thiết' : 'Prospects, first-time, repeat, loyal'}
         >
           <DonutChart
             data={customerSegments}
             valueFormatter={numberCompact}
-            emptyLabel={isVietnamese ? 'Chưa có khách hàng.' : 'No customers.'}
+            emptyLabel={isVietnamese ? 'Chưa có khách hàng.' : 'No customer segment data.'}
           />
           <div className="mt-4 space-y-2">
             {customerSegments.map((item, index) => (
@@ -992,41 +966,41 @@ export default function Dashboard() {
 
       {(blockVisible('voucher_chart') || blockVisible('new_customers')) && <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         {blockVisible('voucher_chart') && <ChartCard
-          title={isVietnamese ? 'Hiệu quả voucher' : 'Voucher effectiveness'}
-          subtitle={isVietnamese ? 'Lượt dùng và doanh thu kéo theo' : 'Usage and attached revenue'}
+          title={isVietnamese ? 'Hiệu quả voucher' : 'Voucher Performance'}
+          subtitle={isVietnamese ? 'Lượt dùng và doanh thu kéo theo' : 'Usage and revenue impact'}
         >
-          <EmptyState show={!couponEffectiveness.length && !loading} label={isVietnamese ? 'Chưa có voucher được dùng.' : 'No voucher usage.'}>
+          <EmptyState show={!couponEffectiveness.length} label={isVietnamese ? 'Chưa có voucher được dùng.' : 'No voucher usage yet.'}>
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={couponEffectiveness} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(96,113,98,0.16)" />
                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#607162' }} />
                 <YAxis axisLine={false} tickLine={false} tickFormatter={numberCompact} tick={{ fontSize: 12, fill: '#607162' }} />
                 <Tooltip contentStyle={tooltipStyle} formatter={(value, name) => name === 'revenue' ? money(value as NumericValue) : numberCompact(value as NumericValue)} />
-                <Bar dataKey="used" name={isVietnamese ? 'Lượt dùng' : 'Uses'} fill="#d6a51d" radius={[8, 8, 0, 0]} />
+                <Bar dataKey="usageCount" name={isVietnamese ? 'Lượt dùng' : 'Usage'} fill="#0b6b43" radius={[10, 10, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </EmptyState>
         </ChartCard>}
 
         {blockVisible('new_customers') && <ChartCard
-          title={isVietnamese ? 'Khách mới 30 ngày' : 'New customers in 30 days'}
-          subtitle={isVietnamese ? 'Tốc độ tăng khách hàng' : 'Customer acquisition speed'}
+          title={isVietnamese ? 'Khách mới 30 ngày' : 'New Customers'}
+          subtitle={isVietnamese ? 'Tốc độ tăng khách hàng' : 'Customer acquisition pace'}
         >
-          <EmptyState show={!newCustomersByDay.length && !loading} label={isVietnamese ? 'Chưa có khách mới.' : 'No new customers.'}>
+          <EmptyState show={!newCustomersByDay.length} label={isVietnamese ? 'Chưa có khách mới.' : 'No new customers.'}>
             <ResponsiveContainer width="100%" height={300}>
               <LineChart data={newCustomersByDay} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(96,113,98,0.16)" />
                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#607162' }} />
                 <YAxis axisLine={false} tickLine={false} tickFormatter={numberCompact} tick={{ fontSize: 12, fill: '#607162' }} />
                 <Tooltip contentStyle={tooltipStyle} formatter={(value) => numberCompact(value as NumericValue)} />
-                <Line type="monotone" dataKey="customers" name={isVietnamese ? 'Khách mới' : 'New customers'} stroke="#2a7f9e" strokeWidth={3} dot={{ r: 3 }} />
+                <Line type="monotone" dataKey="count" name={isVietnamese ? 'Khách mới' : 'New customers'} stroke="#0b6b43" strokeWidth={3} />
               </LineChart>
             </ResponsiveContainer>
           </EmptyState>
         </ChartCard>}
 
         <ChartCard
-          title={isVietnamese ? 'Đánh giá & chẩn đoán lúa' : 'Reviews and rice diagnosis'}
+          title={isVietnamese ? 'Đánh giá & chẩn đoán lúa' : 'Reviews & Rice Diagnosis'}
           subtitle={isVietnamese ? 'Tín hiệu chất lượng sản phẩm và AI' : 'Product quality and AI signals'}
         >
           <div className="grid gap-4">
@@ -1036,7 +1010,7 @@ export default function Dashboard() {
               valueFormatter={numberCompact}
             />
             <MiniBarList
-              title={isVietnamese ? 'Bệnh lúa thường gặp' : 'Common rice diagnoses'}
+              title={isVietnamese ? 'Bệnh lúa thường gặp' : 'Common rice diseases'}
               data={diagnosisData.map((item) => ({
                 name: item.name,
                 value: item.count,
@@ -1049,7 +1023,7 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         <DataPanel
-          title={isVietnamese ? 'Dự báo ngày còn hàng' : 'Days of cover forecast'}
+          title={isVietnamese ? 'Dự báo ngày còn hàng' : 'Stockout Forecast'}
           subtitle={isVietnamese ? 'Dựa trên bán ra 30 ngày' : 'Based on last 30-day sales'}
           icon={CalendarClock}
         >
@@ -1060,27 +1034,27 @@ export default function Dashboard() {
                   name={product.productName}
                   primary={
                     product.daysOfCover
-                      ? `${product.daysOfCover} ${isVietnamese ? 'ngày' : 'days'}`
+                      ? `${Math.round(toNumber(product.daysOfCover))} ${isVietnamese ? 'ngày' : 'days'}`
                       : isVietnamese
                         ? 'Không đủ dữ liệu'
-                        : 'Insufficient data'
+                        : 'Not enough data'
                   }
-                  secondary={`${isVietnamese ? 'Tồn' : 'Stock'} ${product.quantityAvailable} | ${isVietnamese ? 'Bán 30 ngày' : 'Sold 30d'} ${product.soldLast30}`}
+                  secondary={`${isVietnamese ? 'Tồn' : 'Stock'} ${formatNumber(product.quantityAvailable)} · ${isVietnamese ? 'Bán 30 ngày' : '30d sold'} ${formatNumber(product.soldLast30)}`}
                   danger={toNumber(product.daysOfCover) <= 7}
                 />
               </div>
             ))}
             {!dashboard?.stockRiskProducts?.length ? (
               <p className="py-8 text-center text-sm text-on-surface-variant">
-                {isVietnamese ? 'Chưa có dữ liệu dự báo.' : 'No forecast data.'}
+                {isVietnamese ? 'Chưa có dữ liệu dự báo.' : 'No forecast data yet.'}
               </p>
             ) : null}
           </div>
         </DataPanel>
 
         <DataPanel
-          title={isVietnamese ? 'Sản phẩm sắp hết hàng' : 'Low-stock products'}
-          subtitle={isVietnamese ? 'Ưu tiên nhập hàng' : 'Restock priority'}
+          title={isVietnamese ? 'Sản phẩm sắp hết hàng' : 'Low Stock Products'}
+          subtitle={isVietnamese ? 'Ưu tiên nhập hàng' : 'Prioritize replenishment'}
           icon={AlertTriangle}
         >
           <div className="space-y-3">
@@ -1088,22 +1062,22 @@ export default function Dashboard() {
               <div key={product.productId}>
                 <RiskRow
                   name={product.productName}
-                  primary={`${product.quantityAvailable} ${isVietnamese ? 'còn lại' : 'left'}`}
-                  secondary={`${isVietnamese ? 'Đang giữ' : 'Reserved'} ${product.quantityReserved} | ${money(product.productPrice)}`}
+                  primary={`${formatNumber(product.quantityAvailable)} ${isVietnamese ? 'còn lại' : 'left'}`}
+                  secondary={`${isVietnamese ? 'Đang giữ' : 'Reserved'} ${formatNumber(product.quantityReserved ?? 0)}`}
                   danger={toNumber(product.quantityAvailable) <= 3}
                 />
               </div>
             ))}
             {!dashboard?.lowStockProductList?.length ? (
               <p className="py-8 text-center text-sm text-on-surface-variant">
-                {isVietnamese ? 'Không có sản phẩm sắp hết hàng.' : 'No low-stock products.'}
+                {isVietnamese ? 'Không có sản phẩm sắp hết hàng.' : 'No low stock products.'}
               </p>
             ) : null}
           </div>
         </DataPanel>
 
         <DataPanel
-          title={isVietnamese ? 'Sản phẩm nổi bật' : 'Featured products'}
+          title={isVietnamese ? 'Sản phẩm nổi bật' : 'Featured Products'}
           subtitle={isVietnamese ? 'Fallback từ reports hoặc public products' : 'Fallback from reports or public products'}
           icon={Package}
         >
@@ -1125,8 +1099,8 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-5">
         <DataPanel
-          title={isVietnamese ? 'Top khách hàng' : 'Top customers'}
-          subtitle={isVietnamese ? 'Theo doanh thu tích lũy' : 'By accumulated revenue'}
+          title={isVietnamese ? 'Top khách hàng' : 'Top Customers'}
+          subtitle={isVietnamese ? 'Theo doanh thu tích lũy' : 'By lifetime revenue'}
           icon={Users}
           className="xl:col-span-2"
         >
@@ -1137,7 +1111,7 @@ export default function Dashboard() {
                 <div className="min-w-0">
                   <p className="truncate text-sm font-black">{customer.fullName}</p>
                   <p className="text-xs font-semibold text-on-surface-variant">
-                    {customer.orders} {isVietnamese ? 'đơn' : 'orders'} | {customer.phone}
+                  <span>{formatNumber(customer.orders)} {isVietnamese ? 'đơn' : 'orders'}</span>
                   </p>
                 </div>
                 <div className="text-right text-sm font-black text-primary">{moneyCompact(customer.revenue)}</div>
@@ -1145,15 +1119,15 @@ export default function Dashboard() {
             ))}
             {!dashboard?.topCustomers?.length ? (
               <p className="py-8 text-center text-sm text-on-surface-variant">
-                {isVietnamese ? 'Chưa có khách hàng mua hàng.' : 'No purchasing customers yet.'}
+                {isVietnamese ? 'Chưa có khách hàng mua hàng.' : 'No customer purchases yet.'}
               </p>
             ) : null}
           </div>
         </DataPanel>
 
         <DataPanel
-          title={isVietnamese ? 'Đơn hàng gần đây' : 'Recent orders'}
-          subtitle={isVietnamese ? 'Cập nhật realtime cùng dashboard' : 'Realtime with dashboard updates'}
+          title={isVietnamese ? 'Đơn hàng gần đây' : 'Recent Orders'}
+          subtitle={isVietnamese ? 'Cập nhật realtime cùng dashboard' : 'Realtime updates with dashboard'}
           icon={ClipboardList}
           className="xl:col-span-3"
         >
@@ -1161,10 +1135,10 @@ export default function Dashboard() {
             <table className="w-full text-left">
               <thead>
                 <tr className="border-b border-on-surface/5 text-xs font-black uppercase tracking-widest text-on-surface-variant/60">
-                  <th className="pb-3">{isVietnamese ? 'Mã đơn' : 'Order ID'}</th>
-                  <th className="pb-3">{isVietnamese ? 'Khách hàng' : 'Customer'}</th>
-                  <th className="pb-3">{isVietnamese ? 'Giá trị' : 'Amount'}</th>
-                  <th className="pb-3">{isVietnamese ? 'Trạng thái' : 'Status'}</th>
+                  <th>{isVietnamese ? 'Mã đơn' : 'Order'}</th>
+                  <th>{isVietnamese ? 'Khách hàng' : 'Customer'}</th>
+                  <th>{isVietnamese ? 'Giá trị' : 'Value'}</th>
+                  <th>{isVietnamese ? 'Trạng thái' : 'Status'}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-on-surface/5">
@@ -1321,6 +1295,10 @@ function DonutChart({
   );
 }
 
+function EmptyChart({ message }: { message: string }) {
+  return <p className="flex h-[230px] items-center justify-center text-sm text-on-surface-variant">{message}</p>;
+}
+
 function EmptyState({
   show,
   label,
@@ -1444,6 +1422,12 @@ function toNumber(value: NumericValue) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function formatNumber(value: NumericValue) {
+  return new Intl.NumberFormat('vi-VN', {
+    maximumFractionDigits: 1,
+  }).format(toNumber(value));
+}
+
 function formatPercent(value: NumericValue) {
   const numberValue = toNumber(value);
   return `${numberValue >= 0 ? '+' : ''}${numberValue.toFixed(1)}%`;
@@ -1467,7 +1451,7 @@ function shortLabel(value: string, maxLength: number) {
     return value;
   }
 
-  return `${value.slice(0, maxLength - 1)}…`;
+  return `${value.slice(0, maxLength)}...`;
 }
 
 function shortId(value: string) {
@@ -1477,15 +1461,15 @@ function shortId(value: string) {
 function translateOrderStatus(status: string, isVietnamese: boolean) {
   const labels: Record<string, string> = isVietnamese
     ? {
-        pending: 'Chờ xử lý',
-        backordered: 'Chờ hàng',
-        confirmed: 'Đã xác nhận',
-        processing: 'Đang xử lý',
-        shipping: 'Đang giao',
-        delivered: 'Đã giao',
-        partial_delivered: 'Giao một phần',
-        cancelled: 'Đã hủy',
-        returned: 'Đã hoàn',
+    pending: isVietnamese ? 'Chờ xử lý' : 'Pending',
+    confirmed: isVietnamese ? 'Đã xác nhận' : 'Confirmed',
+    processing: isVietnamese ? 'Đang xử lý' : 'Processing',
+    shipping: isVietnamese ? 'Đang giao' : 'Shipping',
+    delivered: isVietnamese ? 'Đã giao' : 'Delivered',
+    cancelled: isVietnamese ? 'Đã hủy' : 'Cancelled',
+    returned: isVietnamese ? 'Đã hoàn' : 'Returned',
+    partial_delivered: isVietnamese ? 'Giao một phần' : 'Partial delivered',
+    partial_returned: isVietnamese ? 'Trả một phần' : 'Partial returned',
       }
     : {
         pending: 'Pending',
@@ -1506,7 +1490,7 @@ function translatePaymentMethod(method: string, isVietnamese: boolean) {
   const labels: Record<string, string> = isVietnamese
     ? {
         cod: 'COD',
-        bank_transfer: 'Chuyển khoản',
+    bank_transfer: isVietnamese ? 'Chuyển khoản' : 'Bank transfer',
         momo: 'MoMo',
         vnpay: 'VNPAY',
         zalopay: 'ZaloPay',
@@ -1527,10 +1511,10 @@ function translatePaymentMethod(method: string, isVietnamese: boolean) {
 function translateStockLevel(level: string, isVietnamese: boolean) {
   const labels: Record<string, string> = isVietnamese
     ? {
-        out: 'Hết hàng',
-        low: 'Tồn thấp',
-        medium: 'Trung bình',
-        healthy: 'Tốt',
+    out: isVietnamese ? 'Hết hàng' : 'Out of stock',
+    low: isVietnamese ? 'Tồn thấp' : 'Low stock',
+    medium: isVietnamese ? 'Trung bình' : 'Medium',
+    healthy: isVietnamese ? 'Tốt' : 'Healthy',
       }
     : {
         out: 'Out',
@@ -1546,10 +1530,10 @@ function translateCustomerSegment(segment: string, isVietnamese: boolean) {
   const normalized = segment.toLowerCase();
   const labels: Record<string, string> = isVietnamese
     ? {
-        'chua mua': 'Chưa mua',
-        'mua 1 lan': 'Mua 1 lần',
-        'lap lai': 'Lặp lại',
-        'than thiet': 'Thân thiết',
+    no_purchase: isVietnamese ? 'Chưa mua' : 'No purchase',
+    first_time: isVietnamese ? 'Mua 1 lần' : 'First-time',
+    repeat: isVietnamese ? 'Mua lặp lại' : 'Repeat',
+    loyal: isVietnamese ? 'Thân thiết' : 'Loyal',
       }
     : {
         'chua mua': 'No orders',

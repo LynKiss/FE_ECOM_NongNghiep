@@ -17,6 +17,7 @@ import {
 import { apiClient } from '../lib/api';
 import { useToast } from '../hooks/useToast';
 import { useLanguage } from '../i18n/language-context';
+import { useConfirmDialog } from '../hooks/useConfirmDialog';
 
 // ─── Types khớp BE ────────────────────────────────────────────────────────────
 type Batch = {
@@ -816,11 +817,21 @@ function FifoSimulatorTab(props: { products: Product[]; t: T }) {
 function ConfigTab(props: { onRefresh: () => void; t: T }) {
   const { onRefresh, t } = props;
   const { showToast } = useToast();
+  const { confirm: askConfirm, ConfirmDialog } = useConfirmDialog();
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<BackfillResult | null>(null);
 
   const runBackfill = async () => {
-    if (!confirm(t('Tạo legacy batch cho tất cả product có stock chưa có batch? (Idempotent — gọi lại không có hại)', 'Create legacy batches for all products with stock that have no batches? (Idempotent — safe to re-run)'))) {
+    const ok = await askConfirm({
+      title: t('Tạo legacy batch?', 'Create legacy batches?'),
+      description: t(
+        'Hệ thống sẽ tạo batch LEGACY cho các sản phẩm đang có tồn nhưng chưa có batch. Thao tác này có thể chạy lại an toàn.',
+        'The system will create LEGACY batches for products with stock but no batch. This action is safe to re-run.',
+      ),
+      tone: 'warning',
+      confirmLabel: t('Chạy backfill', 'Run backfill'),
+    });
+    if (!ok) {
       return;
     }
     setRunning(true);
@@ -838,6 +849,7 @@ function ConfigTab(props: { onRefresh: () => void; t: T }) {
 
   return (
     <div className="space-y-5">
+      {ConfirmDialog}
       <div className="rounded-xl border border-outline-variant bg-surface p-5">
         <h3 className="mb-2 flex items-center gap-2 font-semibold text-on-surface">
           <Database className="h-4 w-4 text-primary" />

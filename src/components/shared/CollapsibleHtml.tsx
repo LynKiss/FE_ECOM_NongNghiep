@@ -10,20 +10,43 @@ type Props = {
 export default function CollapsibleHtml({ html, collapsedHeight = 340, contentClassName = '' }: Props) {
   const [expanded, setExpanded] = useState(false);
   const [overflows, setOverflows] = useState(false);
-  const [fullHeight, setFullHeight] = useState(0);
   const innerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const el = innerRef.current;
     if (!el) return;
-    const h = el.scrollHeight;
-    setFullHeight(h);
-    setOverflows(h > collapsedHeight + 48);
+
+    const measure = () => {
+      const h = el.scrollHeight;
+      setOverflows(h > collapsedHeight + 48);
+    };
+
+    measure();
+
+    const resizeObserver =
+      typeof ResizeObserver !== 'undefined'
+        ? new ResizeObserver(measure)
+        : null;
+    resizeObserver?.observe(el);
+
+    const images = Array.from(el.querySelectorAll('img')) as HTMLImageElement[];
+    images.forEach((image) => {
+      image.addEventListener('load', measure);
+      image.addEventListener('error', measure);
+    });
+
+    return () => {
+      resizeObserver?.disconnect();
+      images.forEach((image) => {
+        image.removeEventListener('load', measure);
+        image.removeEventListener('error', measure);
+      });
+    };
   }, [html, collapsedHeight]);
 
   const maxHeight = overflows
     ? expanded
-      ? (fullHeight || 99999)
+      ? undefined
       : collapsedHeight
     : undefined;
 

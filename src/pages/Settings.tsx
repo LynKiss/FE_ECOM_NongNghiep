@@ -20,6 +20,7 @@ import { apiClient } from '../lib/api';
 import { useLanguage } from '../i18n/language-context';
 import { useToast } from '../hooks/useToast';
 import { useAdminSession } from '../hooks/useAdminSession';
+import { useConfirmDialog } from '../hooks/useConfirmDialog';
 
 export const VIETNAM_PROVINCES = [
   'An Giang','Bà Rịa - Vũng Tàu','Bắc Giang','Bắc Kạn','Bạc Liêu','Bắc Ninh','Bến Tre','Bình Định','Bình Dương','Bình Phước',
@@ -320,6 +321,7 @@ function GeneralTab() {
 
 function ShippingTab() {
   const { showToast } = useToast();
+  const { confirm: askConfirm, ConfirmDialog } = useConfirmDialog();
   const [methods, setMethods] = useState<DeliveryMethod[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -416,7 +418,13 @@ function ShippingTab() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Xác nhận xoá phương thức nhận hàng này?')) return;
+    const ok = await askConfirm({
+      title: 'Xóa phương thức nhận hàng?',
+      description: 'Nếu phương thức đã phát sinh đơn, hệ thống sẽ chỉ ngừng hoạt động để giữ lịch sử đơn hàng.',
+      tone: 'danger',
+      confirmLabel: 'Xóa / ngừng hoạt động',
+    });
+    if (!ok) return;
     setDeletingId(id);
     try {
       const result = await apiClient.delete<{ deleted?: boolean; deactivated?: boolean }>(`/delivery-methods/${id}`);
@@ -436,6 +444,7 @@ function ShippingTab() {
 
   return (
     <div className="space-y-6">
+      {ConfirmDialog}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-black text-on-surface">Phương thức nhận hàng</h2>

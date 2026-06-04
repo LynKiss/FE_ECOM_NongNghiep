@@ -12,6 +12,7 @@ import {
 import { Link } from 'react-router-dom';
 import { useSuperAdminSession } from '../hooks/useSuperAdminSession';
 import { superAdminApiClient } from '../lib/super-admin-api';
+import { useConfirmDialog } from '../hooks/useConfirmDialog';
 
 type Project = {
   _id: string;
@@ -56,6 +57,7 @@ const emptyProjectForm = {
 
 export default function SuperAdminConfig() {
   const { session } = useSuperAdminSession();
+  const { confirm: askConfirm, ConfirmDialog } = useConfirmDialog();
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState('');
   const [admins, setAdmins] = useState<ProjectAdmin[]>([]);
@@ -173,7 +175,13 @@ export default function SuperAdminConfig() {
   }
 
   async function deleteProject(projectId: string, name: string) {
-    if (!window.confirm(`Xóa dự án "${name}"? Thao tác này không thể hoàn tác.`)) return;
+    const ok = await askConfirm({
+      title: `Xóa dự án "${name}"?`,
+      description: 'Thao tác này không thể hoàn tác. Toàn bộ cấu hình đồng bộ của dự án sẽ bị gỡ khỏi Super Admin.',
+      tone: 'danger',
+      confirmLabel: 'Xóa dự án',
+    });
+    if (!ok) return;
     setError(null);
     try {
       await superAdminApiClient.delete(`/projects/${projectId}`);
@@ -191,9 +199,12 @@ export default function SuperAdminConfig() {
   async function savePermissions() {
     if (!selectedProjectId || !selectedAdmin) return;
     if (selectedPermissionKeys.length === 0) {
-      const confirmed = window.confirm(
-        `Thao tác này sẽ xóa TOÀN BỘ quyền của ${selectedAdmin.email}. Bạn có chắc không?`,
-      );
+      const confirmed = await askConfirm({
+        title: 'Xóa toàn bộ quyền?',
+        description: `Thao tác này sẽ xóa TOÀN BỘ quyền của ${selectedAdmin.email}. Admin này có thể mất quyền truy cập sau khi đăng nhập lại.`,
+        tone: 'danger',
+        confirmLabel: 'Xóa quyền',
+      });
       if (!confirmed) return;
     }
     setSyncing(true);
@@ -218,6 +229,7 @@ export default function SuperAdminConfig() {
 
   return (
     <div className="space-y-6 pb-10">
+      {ConfirmDialog}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-[11px] font-black uppercase tracking-[0.18em] text-primary/60">

@@ -20,6 +20,7 @@ import {
 import { apiClient as api } from '../lib/api';
 import { DEFAULT_SMTP_CONFIG, type SmtpConfig } from '../lib/commerce-settings';
 import { useToast } from '../hooks/useToast';
+import { useConfirmDialog } from '../hooks/useConfirmDialog';
 
 type ActiveTab = 'subscribers' | 'campaigns' | 'automation';
 
@@ -154,6 +155,7 @@ function StatCard({
 
 export default function Newsletter() {
   const { showToast } = useToast();
+  const { confirm: askConfirm, ConfirmDialog } = useConfirmDialog();
   const [activeTab, setActiveTab] = useState<ActiveTab>('subscribers');
 
   const [subscriberData, setSubscriberData] = useState<SubscriberPage | null>(null);
@@ -312,7 +314,13 @@ export default function Newsletter() {
   };
 
   const handleDeleteSubscriber = async (id: string) => {
-    if (!window.confirm('Xóa người đăng ký này?')) {
+    const ok = await askConfirm({
+      title: 'Xóa người đăng ký?',
+      description: 'Email này sẽ bị gỡ khỏi danh sách nhận newsletter.',
+      tone: 'danger',
+      confirmLabel: 'Xóa',
+    });
+    if (!ok) {
       return;
     }
 
@@ -371,7 +379,13 @@ export default function Newsletter() {
   };
 
   const handleSendCampaign = async (id: string, subject: string) => {
-    if (!window.confirm(`Gửi chiến dịch "${subject}" ngay bây giờ?`)) {
+    const ok = await askConfirm({
+      title: `Gửi chiến dịch "${subject}"?`,
+      description: 'Chiến dịch sẽ được gửi ngay tới danh sách người đăng ký đang hoạt động.',
+      tone: 'warning',
+      confirmLabel: 'Gửi ngay',
+    });
+    if (!ok) {
       return;
     }
 
@@ -397,7 +411,13 @@ export default function Newsletter() {
   };
 
   const handleDeleteCampaign = async (id: string) => {
-    if (!window.confirm('Xóa chiến dịch này?')) {
+    const ok = await askConfirm({
+      title: 'Xóa chiến dịch?',
+      description: 'Bản nháp hoặc chiến dịch này sẽ bị xóa khỏi hệ thống newsletter.',
+      tone: 'danger',
+      confirmLabel: 'Xóa',
+    });
+    if (!ok) {
       return;
     }
 
@@ -456,6 +476,7 @@ export default function Newsletter() {
 
   return (
     <div className="space-y-6 pb-12">
+      {ConfirmDialog}
       <div>
         <h1 className="text-4xl font-black tracking-tight text-primary">
           Newsletter & Email

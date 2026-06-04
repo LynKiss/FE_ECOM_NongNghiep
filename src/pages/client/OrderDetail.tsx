@@ -27,6 +27,7 @@ import {
   TRACKING_SOURCE_LABELS,
   type OrderTracking,
 } from '../../lib/order-tracking';
+import { useConfirmDialog } from '../../hooks/useConfirmDialog';
 
 type OrderItem = {
   id: string;
@@ -194,6 +195,7 @@ export default function OrderDetail() {
 
   const { addItem } = useCart();
   const { showToast } = useToast();
+  const { confirm: askConfirm, ConfirmDialog } = useConfirmDialog();
 
   const shouldShowTracking =
     order?.fulfillmentType !== 'pickup' &&
@@ -386,7 +388,13 @@ export default function OrderDetail() {
 
   const confirmReceived = async () => {
     if (!order || !id) return;
-    if (!window.confirm('Xác nhận bạn đã nhận được hàng?')) return;
+    const ok = await askConfirm({
+      title: 'Xác nhận đã nhận hàng?',
+      description: 'Sau khi xác nhận, đơn sẽ được ghi nhận là đã giao thành công và có thể mở quyền đánh giá/trả hàng theo chính sách.',
+      tone: 'success',
+      confirmLabel: 'Đã nhận hàng',
+    });
+    if (!ok) return;
     setConfirmingReceived(true);
     try {
       await clientApi.patch(`/orders/${id}/confirm-received`);
@@ -582,6 +590,7 @@ export default function OrderDetail() {
 
   return (
     <div style={{ background: '#f2f0eb', minHeight: '80vh' }}>
+      {ConfirmDialog}
       <div className="mx-auto max-w-4xl px-4 py-10 lg:px-6">
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -973,7 +982,13 @@ export default function OrderDetail() {
               {canCancelUnpaid ? (
                 <button
                   onClick={async () => {
-                    if (!window.confirm('Bạn có chắc muốn hủy đơn hàng này?')) return;
+                    const ok = await askConfirm({
+                      title: 'Hủy đơn hàng?',
+                      description: 'Đơn chưa thanh toán sẽ được hủy và hệ thống hoàn lại phần tồn kho đang giữ.',
+                      tone: 'danger',
+                      confirmLabel: 'Hủy đơn',
+                    });
+                    if (!ok) return;
                     try {
                       await clientApi.patch(`/orders/${order.id}/cancel`);
                       setOrder((current) =>

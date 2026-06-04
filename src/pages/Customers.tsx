@@ -54,6 +54,8 @@ type Customer = {
   _id: string;
   username: string;
   email: string;
+  fullName?: string | null;
+  phoneNumber?: string | null;
   avatarUrl?: string | null;
   role: {
     _id: UserRole;
@@ -70,6 +72,28 @@ type CustomerDetail = Customer & {
     addressesCount: number;
     ordersCount: number;
   };
+  addresses?: Array<{
+    id: string;
+    recipientName: string;
+    phone: string;
+    addressLine: string;
+    ward?: string | null;
+    district?: string | null;
+    province?: string | null;
+    isDefault?: boolean;
+  }>;
+  recentOrders?: Array<{
+    id: string;
+    status: string;
+    paymentMethod: string;
+    paymentStatus: string;
+    totalPayment: number;
+    totalQuantity: number;
+    createdAt: string;
+    fullName?: string | null;
+    phone?: string | null;
+    address?: string | null;
+  }>;
 };
 
 type CustomersResponse = {
@@ -85,6 +109,8 @@ type CustomersResponse = {
 type CustomerFormState = {
   username: string;
   email: string;
+  fullName: string;
+  phoneNumber: string;
   password: string;
   avatarUrl: string;
   role: UserRole;
@@ -97,6 +123,8 @@ type CustomerFormErrors = Partial<Record<keyof CustomerFormState, string>>;
 const defaultFormState: CustomerFormState = {
   username: '',
   email: '',
+  fullName: '',
+  phoneNumber: '',
   password: '',
   avatarUrl: '',
   role: 'customer',
@@ -602,6 +630,8 @@ export default function Customers() {
     setFormState({
       username: customer.username,
       email: customer.email,
+      fullName: customer.fullName ?? '',
+      phoneNumber: customer.phoneNumber ?? '',
       password: '',
       avatarUrl: customer.avatarUrl ?? '',
       role: customer.role._id,
@@ -673,6 +703,8 @@ export default function Customers() {
     const payload = {
       username: formState.username.trim(),
       email: formState.email.trim(),
+      fullName: formState.fullName.trim(),
+      phoneNumber: formState.phoneNumber.trim(),
       password: formState.password.trim() || undefined,
       avatarUrl: buildSelectedAvatarUrl(
         formState.username,
@@ -940,6 +972,7 @@ export default function Customers() {
                 onClick={() => setStatusFilter('inactive')}
               />
             </div>
+
           </div>
         </div>
 
@@ -994,7 +1027,9 @@ export default function Customers() {
                   </td>
                 </tr>
               ) : (
-                customers.map((customer) => (
+                customers.map((customer) => {
+                  const displayName = customer.fullName?.trim() || customer.username;
+                  return (
                   <tr
                     key={customer._id}
                     className="group transition-colors hover:bg-on-surface-variant/[0.02]"
@@ -1002,18 +1037,29 @@ export default function Customers() {
                     <td className="px-8 py-6">
                       <div className="flex items-center gap-4">
                         <UserAvatar
-                          name={customer.username}
+                          name={displayName}
                           avatarUrl={customer.avatarUrl}
                           size="sm"
                         />
-                        <div>
-                          <p className="text-base font-bold text-on-surface">{customer.username}</p>
-                          <p className="text-xs font-medium text-on-surface-variant/60">{customer._id}</p>
+                        <div className="min-w-0">
+                          <p className="truncate text-base font-bold text-on-surface">{displayName}</p>
+                          <p className="text-xs font-medium text-on-surface-variant/60">
+                            @{customer.username}
+                            {customer.phoneNumber ? ` · ${customer.phoneNumber}` : ''}
+                          </p>
+                          <p className="mt-0.5 max-w-[220px] truncate text-[11px] font-medium text-on-surface-variant/40">
+                            {customer._id}
+                          </p>
                         </div>
                       </div>
                     </td>
                     <td className="px-8 py-6 text-sm font-medium text-on-surface-variant">
-                      {customer.email}
+                      <div>
+                        <p>{customer.email}</p>
+                        <p className="mt-1 text-xs text-on-surface-variant/50">
+                          {customer.phoneNumber || (isVietnamese ? 'Chưa có số điện thoại' : 'No phone number')}
+                        </p>
+                      </div>
                     </td>
                     <td className="px-8 py-6">
                       <div className="flex flex-wrap items-center gap-2">
@@ -1040,7 +1086,8 @@ export default function Customers() {
                       </button>
                     </td>
                   </tr>
-                ))
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -1122,23 +1169,43 @@ export default function Customers() {
           <div className="space-y-6">
             <div className="flex items-center gap-4 rounded-xl border border-on-surface/10 bg-surface px-5 py-4">
               <UserAvatar
-                name={selectedCustomer.username}
+                name={selectedCustomer.fullName?.trim() || selectedCustomer.username}
                 avatarUrl={selectedCustomer.avatarUrl}
                 size="lg"
               />
               <div>
-                <h4 className="text-xl font-black text-primary">{selectedCustomer.username}</h4>
-                <p className="mt-1 text-sm text-on-surface-variant">{selectedCustomer.email}</p>
+                <h4 className="text-xl font-black text-primary">
+                  {selectedCustomer.fullName?.trim() || selectedCustomer.username}
+                </h4>
+                <p className="mt-1 text-sm text-on-surface-variant">
+                  @{selectedCustomer.username} · {selectedCustomer.email}
+                </p>
+                <p className="mt-1 text-sm font-semibold text-on-surface">
+                  {selectedCustomer.phoneNumber || (isVietnamese ? 'Chưa cập nhật số điện thoại' : 'No phone number')}
+                </p>
                 <div className="mt-3 flex flex-wrap items-center gap-3">
                   <span className="rounded-full bg-primary/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-primary">
                     {translateRole(selectedCustomer.role.name, isVietnamese)}
                   </span>
                   <StatusBadge isActive={selectedCustomer.isActive} isVietnamese={isVietnamese} />
+                  {selectedCustomer.isWholesale ? (
+                    <span className="rounded-full bg-amber-100 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-amber-700">
+                      {isVietnamese ? 'Khách sỉ' : 'Wholesale'}
+                    </span>
+                  ) : null}
                 </div>
               </div>
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
+              <DetailCard
+                label={isVietnamese ? 'Họ tên' : 'Full name'}
+                value={selectedCustomer.fullName || (isVietnamese ? 'Chưa cập nhật' : 'Not provided')}
+              />
+              <DetailCard
+                label={isVietnamese ? 'Số điện thoại' : 'Phone number'}
+                value={selectedCustomer.phoneNumber || (isVietnamese ? 'Chưa cập nhật' : 'Not provided')}
+              />
               <DetailCard
                 label={isVietnamese ? 'Mã tài khoản' : 'Account ID'}
                 value={selectedCustomer._id}
@@ -1155,6 +1222,86 @@ export default function Customers() {
                 label={isVietnamese ? 'Tổng đơn hàng' : 'Total orders'}
                 value={String(selectedCustomer.statistics.ordersCount)}
               />
+            </div>
+
+            <div className="rounded-xl border border-on-surface/10 bg-white p-5">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-black text-on-surface">
+                    {isVietnamese ? 'Địa chỉ giao hàng gần đây' : 'Recent shipping addresses'}
+                  </p>
+                  <p className="text-xs text-on-surface-variant">
+                    {isVietnamese ? 'Hiển thị tối đa 3 địa chỉ mới nhất của khách.' : 'Showing up to 3 latest addresses.'}
+                  </p>
+                </div>
+                <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-black text-primary">
+                  {selectedCustomer.statistics.addressesCount}
+                </span>
+              </div>
+              {selectedCustomer.addresses?.length ? (
+                <div className="grid gap-3">
+                  {selectedCustomer.addresses.map((address) => (
+                    <div key={address.id} className="rounded-xl bg-surface px-4 py-3 text-sm">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-black text-on-surface">{address.recipientName}</p>
+                        <p className="font-semibold text-on-surface-variant">{address.phone}</p>
+                        {address.isDefault ? (
+                          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-black text-emerald-700">
+                            {isVietnamese ? 'Mặc định' : 'Default'}
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className="mt-1 text-on-surface-variant">
+                        {[address.addressLine, address.ward, address.district, address.province].filter(Boolean).join(', ')}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="rounded-xl bg-surface px-4 py-5 text-center text-sm text-on-surface-variant">
+                  {isVietnamese ? 'Khách hàng chưa lưu địa chỉ giao hàng.' : 'No saved shipping addresses.'}
+                </p>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-on-surface/10 bg-white p-5">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-black text-on-surface">
+                    {isVietnamese ? 'Đơn hàng gần đây' : 'Recent orders'}
+                  </p>
+                  <p className="text-xs text-on-surface-variant">
+                    {isVietnamese ? 'Theo dõi nhanh lịch sử mua hàng của khách.' : 'Quick view of this customer purchase history.'}
+                  </p>
+                </div>
+                <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-black text-primary">
+                  {selectedCustomer.statistics.ordersCount}
+                </span>
+              </div>
+              {selectedCustomer.recentOrders?.length ? (
+                <div className="divide-y divide-on-surface/5 rounded-xl border border-on-surface/5">
+                  {selectedCustomer.recentOrders.map((order) => (
+                    <div key={order.id} className="grid gap-3 px-4 py-3 text-sm sm:grid-cols-[1fr_auto] sm:items-center">
+                      <div className="min-w-0">
+                        <p className="font-black text-primary">#{order.id.slice(0, 8).toUpperCase()}</p>
+                        <p className="mt-1 truncate text-on-surface-variant">
+                          {formatDate(order.createdAt, language)} · {order.paymentMethod} · {order.paymentStatus}
+                        </p>
+                      </div>
+                      <div className="text-left sm:text-right">
+                        <p className="font-black text-on-surface">{formatCurrency(order.totalPayment, language)}</p>
+                        <p className="text-xs text-on-surface-variant">
+                          {order.totalQuantity} {isVietnamese ? 'sản phẩm' : 'items'} · {order.status}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="rounded-xl bg-surface px-4 py-5 text-center text-sm text-on-surface-variant">
+                  {isVietnamese ? 'Khách hàng chưa có đơn hàng.' : 'No orders yet.'}
+                </p>
+              )}
             </div>
           </div>
         )}
@@ -1316,6 +1463,23 @@ export default function Customers() {
             </div>
           </FieldLabel>
           <FieldError message={formErrors.email} />
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <FieldLabel label={isVietnamese ? 'Họ tên khách hàng' : 'Full name'}>
+              <input
+                value={formState.fullName}
+                onChange={(event) => setFormState((current) => ({ ...current, fullName: event.target.value }))}
+                className="w-full rounded-2xl border border-on-surface/10 bg-surface px-4 py-3 text-sm outline-none"
+              />
+            </FieldLabel>
+            <FieldLabel label={isVietnamese ? 'Số điện thoại' : 'Phone number'}>
+              <input
+                value={formState.phoneNumber}
+                onChange={(event) => setFormState((current) => ({ ...current, phoneNumber: event.target.value }))}
+                className="w-full rounded-2xl border border-on-surface/10 bg-surface px-4 py-3 text-sm outline-none"
+              />
+            </FieldLabel>
+          </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <FieldLabel label={isVietnamese ? 'Mật khẩu' : 'Password'}>
@@ -1912,6 +2076,14 @@ function formatDate(value: string, language: string) {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+function formatCurrency(value: number, language: string) {
+  return new Intl.NumberFormat(language === 'vi' ? 'vi-VN' : 'en-US', {
+    style: 'currency',
+    currency: 'VND',
+    maximumFractionDigits: 0,
+  }).format(Number(value) || 0);
 }
 
 function KpiCard({

@@ -17,6 +17,8 @@ import {
   ToggleRight,
   BarChart2,
   Users2,
+  CheckCircle,
+  XCircle,
 } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { apiClient } from '../lib/api';
@@ -46,6 +48,7 @@ type Discount = {
   stats?: { totalUsage: number; uniqueUsers: number };
   isExpired?: boolean;
   isStarted?: boolean;
+  approvalStatus?: 'not_required' | 'pending_approval' | 'approved' | 'rejected';
 };
 
 type Category = { categoryId: string; categoryName: string };
@@ -429,6 +432,28 @@ export default function ProductDiscounts() {
     }
   }
 
+  async function handleApproval(discount: Discount, action: 'approve' | 'reject') {
+    const note = action === 'reject'
+      ? window.prompt(isVietnamese ? 'Lý do từ chối (tùy chọn):' : 'Reject reason (optional):') ?? undefined
+      : undefined;
+    try {
+      await apiClient.patch(`/discounts/admin/${discount.discountId}/${action}`, { note });
+      showToast({
+        tone: 'success',
+        title: action === 'approve'
+          ? (isVietnamese ? 'Đã duyệt mã giảm giá' : 'Discount approved')
+          : (isVietnamese ? 'Đã từ chối mã giảm giá' : 'Discount rejected'),
+      });
+      void loadDiscounts();
+    } catch (err) {
+      showToast({
+        tone: 'error',
+        title: isVietnamese ? 'Thao tác thất bại' : 'Action failed',
+        description: err instanceof Error ? err.message : '',
+      });
+    }
+  }
+
   async function openStats(discount: Discount) {
     try {
       const stats = await apiClient.get<{ totalUsage: number; uniqueUsers: number }>(
@@ -591,12 +616,44 @@ export default function ProductDiscounts() {
                         {d.usedCount}/{d.usageLimit ?? '∞'}
                       </td>
                       <td className="px-4 py-4">
-                        <span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.15em] ${badge.cls}`}>
-                          {badge.label}
-                        </span>
+                        <div className="flex flex-col items-start gap-1">
+                          <span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.15em] ${badge.cls}`}>
+                            {badge.label}
+                          </span>
+                          {d.approvalStatus === 'pending_approval' && (
+                            <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-amber-700">
+                              {isVietnamese ? '⏳ Chờ duyệt' : '⏳ Pending'}
+                            </span>
+                          )}
+                          {d.approvalStatus === 'rejected' && (
+                            <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-red-700">
+                              {isVietnamese ? '✕ Bị từ chối' : '✕ Rejected'}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-4">
                         <div className="flex items-center justify-center gap-1">
+                          {d.approvalStatus === 'pending_approval' && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => void handleApproval(d, 'approve')}
+                                title={isVietnamese ? 'Duyệt' : 'Approve'}
+                                className="rounded-xl p-2 text-emerald-600 hover:bg-emerald-50"
+                              >
+                                <CheckCircle size={16} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void handleApproval(d, 'reject')}
+                                title={isVietnamese ? 'Từ chối' : 'Reject'}
+                                className="rounded-xl p-2 text-red-500 hover:bg-red-50"
+                              >
+                                <XCircle size={16} />
+                              </button>
+                            </>
+                          )}
                           <button
                             type="button"
                             onClick={() => void openStats(d)}
